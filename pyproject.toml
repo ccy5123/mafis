@@ -1,0 +1,63 @@
+[project]
+name = "wise-investor"
+version = "0.1.0"
+description = "Long-term fundamental investment analysis system (Phase 1 MVP)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "MAFIS" }]
+
+dependencies = [
+    # Agent orchestration
+    "crewai>=0.70.0",
+    # Local LLM client (direct control for keep_alive, etc.)
+    "ollama>=0.4.0",
+    # RAG vector store
+    "chromadb>=0.5.0",
+    # Data sources
+    "yfinance>=0.2.40",
+    "httpx>=0.27.0",
+    # Config & settings
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    # Utilities
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wise_investor"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+# Skip network-marked tests by default; run with `pytest -m network` to include.
+addopts = "-v --tb=short -m 'not network'"
+markers = [
+    "network: integration tests that hit real external APIs (opt-in via -m network)",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/wise_investor"]
