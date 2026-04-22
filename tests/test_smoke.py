@@ -19,17 +19,13 @@ def test_config_defaults_enforce_reproducibility() -> None:
     assert settings.llm_seed == 42, "seed must be fixed for reproducibility"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Phase 1B interim: all agents use Qwen 2.5 7B-16k until Phase 1C "
-        "installs DeepSeek-R1-Distill-Qwen-7B for the Skeptic. The 'different "
-        "LLM' principle of design-v2.2 §7.4 is temporarily relaxed. Tracked in "
-        "docs/phase1a_notes.md and memory/project_phase1b_target.md."
-    ),
-    strict=True,
-)
 def test_model_assignment_matches_design() -> None:
-    """Bull side uses one model, Bear side uses a distinct local model (design-v2.2 §7.4)."""
+    """Bull side uses one model, Bear side uses a distinct local model (design-v2.2 §7.4).
+
+    Phase 1C restores this invariant: Analyst/Valuer on Qwen 2.5 7B-16k,
+    Skeptic on Llama 3.1 8B-16k. Genuinely different training corpora and
+    architectures for adversarial diversity.
+    """
     from wise_investor.config import settings
 
     bull_models = {settings.analyst_model, settings.valuer_model}

@@ -525,6 +525,41 @@ def render_facts_block(facts: dict[str, str]) -> str:
     return "\n\n".join(sections)
 
 
+def _run_synthesis_once(
+    system_prompt: str,
+    user_prompt: str,
+    model: str,
+    keep_alive: str | int | None = None,
+    log_fn: Callable[[str], None] | None = None,
+) -> tuple[str, float]:
+    """Single LLM call for synthesis. Returns (final_text, elapsed_sec).
+
+    Used by both the Analyst-only pipeline and the Phase 1C crew pipeline.
+    keep_alive controls how long Ollama keeps the model in memory after the
+    call — pass "0" to unload immediately (useful before a model swap).
+    """
+    log = log_fn or (lambda m: logger.info(m))
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    options: dict[str, Any] = {
+        "temperature": settings.llm_temperature,
+        "seed": settings.llm_seed,
+    }
+    kwargs: dict[str, Any] = {"model": model, "messages": messages, "options": options}
+    if keep_alive is not None:
+        kwargs["keep_alive"] = keep_alive
+
+    t0 = time.perf_counter()
+    log(f"[synthesis] {model} (keep_alive={keep_alive})")
+    resp = ollama.chat(**kwargs)
+    elapsed = time.perf_counter() - t0
+    text = resp["message"].get("content", "") or ""
+    log(f"[synthesis] {model} done in {elapsed:.1f}s ({len(text)} chars)")
+    return text, elapsed
+
+
 def run_analyst_synthesis(
     system_prompt: str,
     task_prompt: str,
@@ -600,6 +635,181 @@ def run_analyst_synthesis(
         elapsed_sec=elapsed,
         tool_trace=trace,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 1C: full crew synthesis (Analyst -> Valuer -> Skeptic)
+# ---------------------------------------------------------------------------
+
+
+def _wrap_user_prompt_with_facts(
+    task_prompt: str, facts: dict[str, str], is_skeptic: bool = False
+) -> str:
+    """Prepend the pre-gathered facts block to any task-specific user prompt."""
+    facts_block = render_facts_block(facts)
+    intro = (
+        "<pre_gathered_tool_outputs>\n"
+        "These are the complete, authoritative numeric facts for this report. "
+        "Python has already run all Phase 1A calculation tools. You MUST NOT "
+        "state any number that does not appear in a <tool_output> block below. "
+        "When you cite a number, name its tool in square brackets, e.g. "
+        "[Source: calculate_per] or [Source: fetch.revenue].\n\n"
+        + facts_block
+        + "\n</pre_gathered_tool_outputs>\n\n"
+    )
+    return intro + task_prompt
+
+
+@dataclass
+class CrewRunResult:
+    """Output of a full Analyst -> Valuer -> Skeptic synthesis pipeline."""
+
+    symbol: str
+    analyst_text: str
+    valuer_text: str
+    skeptic_text: str
+    combined_markdown: str
+    analyst_elapsed: float
+    valuer_elapsed: float
+    skeptic_elapsed: float
+    pre_gather_elapsed: float
+    total_elapsed: float
+    facts_used: dict[str, str]
+    analyst_model: str
+    valuer_model: str
+    skeptic_model: str
+
+
+def run_crew_synthesis(
+    symbol: str,
+    value_chain_text: str,
+    facts: dict[str, str],
+    analyst_system: str,
+    analyst_task: str,
+    valuer_system: str,
+    valuer_user_prompt_builder: Callable[[str, str, str], str],
+    skeptic_system: str,
+    skeptic_user_prompt_builder: Callable[[str, str, str, str], str],
+    analyst_model_name: str | None = None,
+    valuer_model_name: str | None = None,
+    skeptic_model_name: str | None = None,
+    log_fn: Callable[[str], None] | None = None,
+) -> CrewRunResult:
+    """Run the Phase 1C pipeline: Analyst, then Valuer (reads Analyst), then
+    Skeptic (reads both), producing a combined markdown report.
+
+    Model swap strategy: keep_alive defaults for Analyst and Valuer (both on
+    the same Qwen model in Phase 1C-B config), then keep_alive="0" on the
+    Valuer call to unload Qwen before Skeptic's Llama loads.
+    """
+    log = log_fn or (lambda m: logger.info(m))
+
+    a_model = analyst_model_name or settings.analyst_model
+    v_model = valuer_model_name or settings.valuer_model
+    s_model = skeptic_model_name or settings.skeptic_model
+
+    t_start = time.perf_counter()
+
+    # -- Analyst
+    log(f"[crew] Analyst on {a_model}")
+    analyst_user = _wrap_user_prompt_with_facts(analyst_task, facts)
+    analyst_text, analyst_elapsed = _run_synthesis_once(
+        system_prompt=analyst_system,
+        user_prompt=analyst_user,
+        model=a_model,
+        log_fn=log_fn,
+    )
+
+    # -- Valuer (reads Analyst output)
+    log(f"[crew] Valuer on {v_model}")
+    valuer_task = valuer_user_prompt_builder(symbol, value_chain_text, analyst_text)
+    valuer_user = _wrap_user_prompt_with_facts(valuer_task, facts)
+    # If Valuer shares a model with Analyst (Phase 1C-B default: both Qwen),
+    # we can let keep_alive be default; but we unload AFTER Valuer so Skeptic's
+    # different model has VRAM to load into.
+    valuer_unload = "0" if s_model != v_model else None
+    valuer_text, valuer_elapsed = _run_synthesis_once(
+        system_prompt=valuer_system,
+        user_prompt=valuer_user,
+        model=v_model,
+        keep_alive=valuer_unload,
+        log_fn=log_fn,
+    )
+
+    # -- Skeptic (reads Analyst + Valuer)
+    log(f"[crew] Skeptic on {s_model}")
+    skeptic_task = skeptic_user_prompt_builder(
+        symbol, value_chain_text, analyst_text, valuer_text
+    )
+    skeptic_user = _wrap_user_prompt_with_facts(skeptic_task, facts, is_skeptic=True)
+    skeptic_text, skeptic_elapsed = _run_synthesis_once(
+        system_prompt=skeptic_system,
+        user_prompt=skeptic_user,
+        model=s_model,
+        log_fn=log_fn,
+    )
+
+    total_elapsed = time.perf_counter() - t_start
+
+    combined = _compose_combined_report(
+        symbol=symbol,
+        analyst_text=analyst_text,
+        valuer_text=valuer_text,
+        skeptic_text=skeptic_text,
+        analyst_model=a_model,
+        valuer_model=v_model,
+        skeptic_model=s_model,
+    )
+
+    return CrewRunResult(
+        symbol=symbol.upper(),
+        analyst_text=analyst_text,
+        valuer_text=valuer_text,
+        skeptic_text=skeptic_text,
+        combined_markdown=combined,
+        analyst_elapsed=analyst_elapsed,
+        valuer_elapsed=valuer_elapsed,
+        skeptic_elapsed=skeptic_elapsed,
+        pre_gather_elapsed=0.0,
+        total_elapsed=total_elapsed,
+        facts_used=facts,
+        analyst_model=a_model,
+        valuer_model=v_model,
+        skeptic_model=s_model,
+    )
+
+
+def _compose_combined_report(
+    symbol: str,
+    analyst_text: str,
+    valuer_text: str,
+    skeptic_text: str,
+    analyst_model: str,
+    valuer_model: str,
+    skeptic_model: str,
+) -> str:
+    """Assemble the three agent outputs into a single markdown document."""
+    header = (
+        f"# {symbol} — Equity Research Note (Phase 1C MVP)\n\n"
+        "_Generated by the Wise Investor System: Analyst + Valuer + Skeptic._\n"
+        f"_Models: Analyst/{analyst_model} · Valuer/{valuer_model} · "
+        f"Skeptic/{skeptic_model}_\n\n"
+        "---\n\n"
+    )
+    divider = "\n\n---\n\n"
+    return (
+        header
+        + f"# Part 1 · Analyst\n\n{analyst_text.strip()}"
+        + divider
+        + f"# Part 2 · Valuer\n\n{valuer_text.strip()}"
+        + divider
+        + f"# Part 3 · Skeptic\n\n{skeptic_text.strip()}\n"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legacy tool-calling agent loop (kept for compatibility, not used in 1C)
+# ---------------------------------------------------------------------------
 
 
 def _execute_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
