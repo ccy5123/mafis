@@ -41,6 +41,11 @@ from wise_investor.agents.tasks import (  # noqa: E402
 )
 from wise_investor.agents.valuer import make_valuer_system_prompt  # noqa: E402
 from wise_investor.config import settings  # noqa: E402
+from wise_investor.notify.summary import (  # noqa: E402
+    extract_verdict_summary,
+    format_korean_summary,
+)
+from wise_investor.notify.telegram import TelegramNotifier  # noqa: E402
 
 
 console = Console()
@@ -152,6 +157,17 @@ def run(symbol: str) -> int:
     console.rule(f"[green]Crew done in {total_min:.1f} min[/green]")
     console.print(f"Report: [cyan]{report_path}[/cyan]")
     console.print(f"Meta:   [dim]{meta_path}[/dim]")
+
+    # -- Push Korean summary to Telegram if configured (no-op otherwise)
+    notifier = TelegramNotifier()
+    if notifier.configured:
+        summary = extract_verdict_summary(symbol, result.combined_markdown)
+        korean = format_korean_summary(summary, report_path=str(report_path))
+        sent = notifier.send(korean)
+        if sent:
+            console.print("[cyan]📨 Telegram summary pushed[/cyan]")
+        else:
+            console.print("[yellow]Telegram push failed — see logs[/yellow]")
     return 0
 
 

@@ -60,6 +60,11 @@ from wise_investor.agents.tasks import (  # noqa: E402
 )
 from wise_investor.agents.valuer import make_valuer_system_prompt  # noqa: E402
 from wise_investor.config import settings  # noqa: E402
+from wise_investor.notify.summary import (  # noqa: E402
+    extract_verdict_summary,
+    format_korean_summary,
+)
+from wise_investor.notify.telegram import TelegramNotifier  # noqa: E402
 from wise_investor.ticker_registry import (  # noqa: E402
     RegistryError,
     Tier,
@@ -134,6 +139,14 @@ def run_tier_1(symbol: str, dry_run: bool = False) -> dict:
     )
     elapsed = time.perf_counter() - t0
     report_path.write_text(result.combined_markdown, encoding="utf-8")
+
+    notifier = TelegramNotifier()
+    pushed = False
+    if notifier.configured:
+        summary = extract_verdict_summary(symbol, result.combined_markdown)
+        korean = format_korean_summary(summary, report_path=str(report_path))
+        pushed = notifier.send(korean)
+
     return {
         "symbol": symbol,
         "tier": "tier_1",
@@ -141,6 +154,7 @@ def run_tier_1(symbol: str, dry_run: bool = False) -> dict:
         "output": str(report_path),
         "elapsed_sec": round(elapsed, 1),
         "status": "ok",
+        "telegram_pushed": pushed,
     }
 
 
@@ -340,6 +354,21 @@ def main() -> int:
     console.print(_render_summary(results))
     log_path = _write_sweep_log(results, stamp)
     console.print(f"\n[dim]Sweep log: {log_path}[/dim]")
+
+    # -- One-line Telegram sweep summary if configured
+    notifier = TelegramNotifier()
+    if notifier.configured and not args.dry_run:
+        ok = sum(1 for r in results if r.get("status") == "ok")
+        errors = sum(1 for r in results if r.get("status") == "error")
+        tracked = sum(1 for r in results if r.get("status") == "tracked")
+        text = (
+            "🔁 일일 sweep 완료\n\n"
+            f"Tier 1 전체 분석: {sum(1 for r in results if r.get('tier') == 'tier_1')}건\n"
+            f"Tier 2 pre-gather: {sum(1 for r in results if r.get('tier') == 'tier_2')}건\n"
+            f"Tier 3 registry only: {tracked}건\n"
+            f"오류: {errors}건"
+        )
+        notifier.send(text)
     return 0
 
 

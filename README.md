@@ -94,3 +94,19 @@ MAFIS/
 - **로컬 우선, API 최후**: Phase 1은 외부 LLM API 비용 0원
 - **LLM은 판단, Python은 계산**: 수치는 `src/wise_investor/tools/`가, 해석은 LLM이
 - **재현성**: `temperature=0`, `seed=42` 기본값
+
+## Telegram 알림 (선택)
+
+Tier 1 리포트가 완성되면 한국어 요약이 텔레그램으로 푸시됩니다.
+
+1. 텔레그램 `@BotFather`에 `/newbot` → 이름/유저네임 설정 → 토큰 복사
+2. 본인 봇에 아무 메시지나 한 번 보내기 (채팅 생성)
+3. `https://api.telegram.org/bot<TOKEN>/getUpdates` 접속 → 응답에서 `chat.id` 복사
+4. `.env`에 추가:
+   ```
+   TELEGRAM_BOT_TOKEN=<1단계 토큰>
+   TELEGRAM_CHAT_ID=<3단계 chat id>
+   ```
+5. `scripts/run_crew.py <TICKER>` 또는 `scripts/daily_run.py` 실행 후 자동 알림 수신
+
+설정하지 않으면 조용히 건너뜀 (에러 없음).

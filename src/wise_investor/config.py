@@ -28,6 +28,16 @@ class Settings(BaseSettings):
         default="", description="FRED API key (macro context for Economist agent)"
     )
 
+    # Telegram notification (Phase 3B) — optional. If either is empty
+    # the notifier no-ops silently so developers running without a bot
+    # get no spurious errors.
+    telegram_bot_token: str = Field(
+        default="", description="Telegram bot token from @BotFather"
+    )
+    telegram_chat_id: str = Field(
+        default="", description="Telegram chat_id (yours, or a group's)"
+    )
+
     ollama_host: str = Field(default="http://localhost:11434")
     analyst_model: str = Field(default="llama3.1:8b")
     valuer_model: str = Field(default="llama3.1:8b")
