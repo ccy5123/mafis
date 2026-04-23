@@ -793,22 +793,25 @@ def _wrap_user_prompt_with_facts(
 
 @dataclass
 class CrewRunResult:
-    """Output of a full Analyst -> Valuer -> Skeptic synthesis pipeline."""
+    """Output of a full Analyst -> Valuer -> Skeptic -> Steward synthesis pipeline."""
 
     symbol: str
     analyst_text: str
     valuer_text: str
     skeptic_text: str
+    steward_text: str
     combined_markdown: str
     analyst_elapsed: float
     valuer_elapsed: float
     skeptic_elapsed: float
+    steward_elapsed: float
     pre_gather_elapsed: float
     total_elapsed: float
     facts_used: dict[str, str]
     analyst_model: str
     valuer_model: str
     skeptic_model: str
+    steward_model: str
 
 
 def run_crew_synthesis(
@@ -821,23 +824,26 @@ def run_crew_synthesis(
     valuer_user_prompt_builder: Callable[[str, str, str], str],
     skeptic_system: str,
     skeptic_user_prompt_builder: Callable[[str, str, str, str], str],
+    steward_system: str,
+    steward_user_prompt_builder: Callable[[str, str, str, str, str], str],
     analyst_model_name: str | None = None,
     valuer_model_name: str | None = None,
     skeptic_model_name: str | None = None,
+    steward_model_name: str | None = None,
     log_fn: Callable[[str], None] | None = None,
 ) -> CrewRunResult:
-    """Run the Phase 1C pipeline: Analyst, then Valuer (reads Analyst), then
-    Skeptic (reads both), producing a combined markdown report.
+    """Run the Phase 2 pipeline: Analyst → Valuer → Skeptic → Steward.
 
-    Model swap strategy: keep_alive defaults for Analyst and Valuer (both on
-    the same Qwen model in Phase 1C-B config), then keep_alive="0" on the
-    Valuer call to unload Qwen before Skeptic's Llama loads.
+    Model swap strategy: Analyst/Valuer share Qwen; keep_alive="0" after
+    Valuer so Skeptic's Llama can load. keep_alive="0" after Skeptic so
+    Steward's Qwen can load back (Skeptic != Steward model).
     """
     log = log_fn or (lambda m: logger.info(m))
 
     a_model = analyst_model_name or settings.analyst_model
     v_model = valuer_model_name or settings.valuer_model
     s_model = skeptic_model_name or settings.skeptic_model
+    st_model = steward_model_name or settings.steward_model
 
     t_start = time.perf_counter()
 
@@ -855,9 +861,6 @@ def run_crew_synthesis(
     log(f"[crew] Valuer on {v_model}")
     valuer_task = valuer_user_prompt_builder(symbol, value_chain_text, analyst_text)
     valuer_user = _wrap_user_prompt_with_facts(valuer_task, facts)
-    # If Valuer shares a model with Analyst (Phase 1C-B default: both Qwen),
-    # we can let keep_alive be default; but we unload AFTER Valuer so Skeptic's
-    # different model has VRAM to load into.
     valuer_unload = "0" if s_model != v_model else None
     valuer_text, valuer_elapsed = _run_synthesis_once(
         system_prompt=valuer_system,
@@ -873,10 +876,27 @@ def run_crew_synthesis(
         symbol, value_chain_text, analyst_text, valuer_text
     )
     skeptic_user = _wrap_user_prompt_with_facts(skeptic_task, facts, is_skeptic=True)
+    # Unload Skeptic model if Steward runs on a different model (typical:
+    # Skeptic=Llama, Steward=Qwen — swap back).
+    skeptic_unload = "0" if st_model != s_model else None
     skeptic_text, skeptic_elapsed = _run_synthesis_once(
         system_prompt=skeptic_system,
         user_prompt=skeptic_user,
         model=s_model,
+        keep_alive=skeptic_unload,
+        log_fn=log_fn,
+    )
+
+    # -- Steward (reads Analyst + Valuer + Skeptic)
+    log(f"[crew] Steward on {st_model}")
+    steward_task = steward_user_prompt_builder(
+        symbol, value_chain_text, analyst_text, valuer_text, skeptic_text
+    )
+    steward_user = _wrap_user_prompt_with_facts(steward_task, facts)
+    steward_text, steward_elapsed = _run_synthesis_once(
+        system_prompt=steward_system,
+        user_prompt=steward_user,
+        model=st_model,
         log_fn=log_fn,
     )
 
@@ -887,9 +907,11 @@ def run_crew_synthesis(
         analyst_text=analyst_text,
         valuer_text=valuer_text,
         skeptic_text=skeptic_text,
+        steward_text=steward_text,
         analyst_model=a_model,
         valuer_model=v_model,
         skeptic_model=s_model,
+        steward_model=st_model,
     )
 
     return CrewRunResult(
@@ -897,16 +919,19 @@ def run_crew_synthesis(
         analyst_text=analyst_text,
         valuer_text=valuer_text,
         skeptic_text=skeptic_text,
+        steward_text=steward_text,
         combined_markdown=combined,
         analyst_elapsed=analyst_elapsed,
         valuer_elapsed=valuer_elapsed,
         skeptic_elapsed=skeptic_elapsed,
+        steward_elapsed=steward_elapsed,
         pre_gather_elapsed=0.0,
         total_elapsed=total_elapsed,
         facts_used=facts,
         analyst_model=a_model,
         valuer_model=v_model,
         skeptic_model=s_model,
+        steward_model=st_model,
     )
 
 
@@ -915,16 +940,18 @@ def _compose_combined_report(
     analyst_text: str,
     valuer_text: str,
     skeptic_text: str,
+    steward_text: str,
     analyst_model: str,
     valuer_model: str,
     skeptic_model: str,
+    steward_model: str,
 ) -> str:
-    """Assemble the three agent outputs into a single markdown document."""
+    """Assemble the four agent outputs into a single markdown document."""
     header = (
-        f"# {symbol} — Equity Research Note (Phase 1C MVP)\n\n"
-        "_Generated by the Wise Investor System: Analyst + Valuer + Skeptic._\n"
+        f"# {symbol} — Equity Research Note (Phase 2 — Full Crew)\n\n"
+        "_Generated by the Wise Investor System: Analyst + Valuer + Skeptic + Steward._\n"
         f"_Models: Analyst/{analyst_model} · Valuer/{valuer_model} · "
-        f"Skeptic/{skeptic_model}_\n\n"
+        f"Skeptic/{skeptic_model} · Steward/{steward_model}_\n\n"
         "---\n\n"
     )
     divider = "\n\n---\n\n"
@@ -934,7 +961,9 @@ def _compose_combined_report(
         + divider
         + f"# Part 2 · Valuer\n\n{valuer_text.strip()}"
         + divider
-        + f"# Part 3 · Skeptic\n\n{skeptic_text.strip()}\n"
+        + f"# Part 3 · Skeptic\n\n{skeptic_text.strip()}"
+        + divider
+        + f"# Part 4 · Steward\n\n{steward_text.strip()}\n"
     )
 
 

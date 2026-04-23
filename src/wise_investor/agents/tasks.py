@@ -344,6 +344,102 @@ def make_skeptic_user_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Steward task template (Phase 2) — consumes Analyst + Valuer + Skeptic
+# ---------------------------------------------------------------------------
+
+
+STEWARD_REPORT_TEMPLATE = """\
+You are producing the Steward (final verdict) section of the equity
+research note on {symbol}. This section MUST have these five H2 headings,
+in this order, with no other sections:
+
+## Verdict
+One word only, on its own line, in all caps: **BUY**, **HOLD**, or **PASS**.
+Nothing else in this section — no hedging prose, no "Conditional BUY",
+no "BUY with caveats". The caveats go in Confidence Caveats below.
+
+## Conviction Level
+An integer 1-5, on its own line, as "**Conviction: N**". BUY may carry
+2-5. HOLD and PASS carry only 1 or 2. Add one sentence explaining why
+this specific conviction number rather than one higher or lower.
+
+## Rationale
+Two to four short paragraphs. The FIRST paragraph must state the Bull
+thesis in one sentence and the Skeptic's strongest surviving rebuttal in
+one sentence. The remaining paragraph(s) explain why the Bull thesis
+does or does not survive the rebuttals. Every numeric value MUST end
+with [Source: <agent_or_tool>] — cite Analyst, Valuer, Skeptic, or a
+specific tool name from pre_gathered_tool_outputs. Do not introduce
+numbers that do not already appear earlier in the report.
+
+## Position Sizing Guidance
+If Verdict is BUY: suggest a position-size band as a percent of portfolio
+(e.g., "2-4% of equity allocation for this conviction level"). Map
+conviction to size as a rough rule: C2→1-2%, C3→2-3%, C4→3-5%, C5→5-8%.
+State the band on one line.
+
+If Verdict is HOLD: state "No addition at current price; existing
+position retained." — no percent band.
+
+If Verdict is PASS: state "No position. Revisit when the rebuttal that
+blocks BUY is materially neutralized (name it)."
+
+## Confidence Caveats
+Bulleted list of specific data gaps or events that would change the
+verdict. Each bullet names:
+- what is unknown
+- why its resolution matters
+- what direction (toward BUY or toward PASS) the verdict would move if
+  the gap were filled positively for the Bull
+
+At least one bullet must reference a specific Skeptic rebuttal that
+COULD have been falsified if certain data were available but was not.
+
+Do NOT issue SELL — short-selling is outside the mandate. Do NOT hedge
+("somewhere between HOLD and PASS"). Commit to a single verdict from
+{{BUY, HOLD, PASS}} with a single conviction integer.
+"""
+
+
+def make_steward_user_prompt(
+    symbol: str,
+    value_chain_text: str,
+    analyst_output: str,
+    valuer_output: str,
+    skeptic_output: str,
+) -> str:
+    """Build the Steward's user-prompt content.
+
+    Gives the Steward the full three-agent research note plus the value
+    chain brief, so the final verdict can cite whichever section carries
+    the relevant evidence.
+    """
+    symbol = symbol.upper()
+    return (
+        f"You are writing the Steward section of the research note on {symbol}.\n\n"
+        "The Analyst, Valuer, and Skeptic have each completed their sections "
+        "above. Your job is to synthesize all three into a final verdict. "
+        "Read the Skeptic section especially carefully — your Rationale must "
+        "name which rebuttals survive and which are neutralized.\n\n"
+        "<analyst_section>\n"
+        f"{analyst_output}\n"
+        "</analyst_section>\n\n"
+        "<valuer_section>\n"
+        f"{valuer_output}\n"
+        "</valuer_section>\n\n"
+        "<skeptic_section>\n"
+        f"{skeptic_output}\n"
+        "</skeptic_section>\n\n"
+        "For qualitative context (industry, customer concentration, "
+        "geopolitical risks), refer to the value chain brief:\n\n"
+        "<value_chain_brief>\n"
+        f"{value_chain_text}\n"
+        "</value_chain_brief>\n\n"
+        + STEWARD_REPORT_TEMPLATE.format(symbol=symbol)
+    )
+
+
+# ---------------------------------------------------------------------------
 # Analyst task factory (Phase 1B, retained)
 # ---------------------------------------------------------------------------
 

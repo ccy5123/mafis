@@ -28,11 +28,13 @@ from wise_investor.agents.runner import (  # noqa: E402
     run_crew_synthesis,
 )
 from wise_investor.agents.skeptic import make_skeptic_system_prompt  # noqa: E402
+from wise_investor.agents.steward import make_steward_system_prompt  # noqa: E402
 from wise_investor.agents.tasks import (  # noqa: E402
     CONTEXT_INSTRUCTIONS,
     REPORT_TEMPLATE,
     _load_value_chain,
     make_skeptic_user_prompt,
+    make_steward_user_prompt,
     make_valuer_user_prompt,
 )
 from wise_investor.agents.valuer import make_valuer_system_prompt  # noqa: E402
@@ -75,10 +77,11 @@ def run(symbol: str) -> int:
     report_path = REPORTS_DIR / f"{symbol}_{stamp}.crew.md"
     meta_path = REPORTS_DIR / f"{symbol}_{stamp}.crew.meta.txt"
 
-    console.rule(f"[bold]Phase 1C — Crew run for {symbol}[/bold]")
+    console.rule(f"[bold]Phase 2 — Full crew run for {symbol}[/bold]")
     console.print(f"Analyst: [cyan]{settings.analyst_model}[/cyan]")
     console.print(f"Valuer:  [cyan]{settings.valuer_model}[/cyan]")
     console.print(f"Skeptic: [magenta]{settings.skeptic_model}[/magenta]")
+    console.print(f"Steward: [cyan]{settings.steward_model}[/cyan]")
     console.print(f"Temperature: {settings.llm_temperature}  Seed: {settings.llm_seed}")
     console.print(f"Report → [dim]{report_path}[/dim]")
 
@@ -96,7 +99,7 @@ def run(symbol: str) -> int:
     # -- Load value chain brief once; reused by Valuer and Skeptic
     value_chain_text = _load_value_chain(symbol)
 
-    # -- Run the three-agent pipeline
+    # -- Run the four-agent pipeline
     result = run_crew_synthesis(
         symbol=symbol,
         value_chain_text=value_chain_text,
@@ -107,6 +110,8 @@ def run(symbol: str) -> int:
         valuer_user_prompt_builder=make_valuer_user_prompt,
         skeptic_system=make_skeptic_system_prompt(),
         skeptic_user_prompt_builder=make_skeptic_user_prompt,
+        steward_system=make_steward_system_prompt(),
+        steward_user_prompt_builder=make_steward_user_prompt,
         log_fn=log,
     )
     # Attach the pre-gather time so the meta file is complete.
@@ -119,16 +124,19 @@ def run(symbol: str) -> int:
         f"analyst_model: {result.analyst_model}\n"
         f"valuer_model: {result.valuer_model}\n"
         f"skeptic_model: {result.skeptic_model}\n"
+        f"steward_model: {result.steward_model}\n"
         f"temperature: {settings.llm_temperature}\n"
         f"seed: {settings.llm_seed}\n"
         f"pre_gather_sec: {result.pre_gather_elapsed:.1f}\n"
         f"analyst_sec: {result.analyst_elapsed:.1f}\n"
         f"valuer_sec: {result.valuer_elapsed:.1f}\n"
         f"skeptic_sec: {result.skeptic_elapsed:.1f}\n"
+        f"steward_sec: {result.steward_elapsed:.1f}\n"
         f"total_sec: {result.total_elapsed + result.pre_gather_elapsed:.1f}\n"
         f"analyst_chars: {len(result.analyst_text)}\n"
         f"valuer_chars: {len(result.valuer_text)}\n"
-        f"skeptic_chars: {len(result.skeptic_text)}\n",
+        f"skeptic_chars: {len(result.skeptic_text)}\n"
+        f"steward_chars: {len(result.steward_text)}\n",
         encoding="utf-8",
     )
 

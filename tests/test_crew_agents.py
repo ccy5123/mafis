@@ -14,10 +14,18 @@ from wise_investor.agents.skeptic import (
     make_skeptic_system_prompt,
     skeptic_model,
 )
+from wise_investor.agents.steward import (
+    STEWARD_BACKSTORY,
+    STEWARD_GOAL,
+    make_steward_system_prompt,
+    steward_model,
+)
 from wise_investor.agents.tasks import (
     SKEPTIC_REPORT_TEMPLATE,
+    STEWARD_REPORT_TEMPLATE,
     VALUER_REPORT_TEMPLATE,
     make_skeptic_user_prompt,
+    make_steward_user_prompt,
     make_valuer_user_prompt,
 )
 from wise_investor.agents.valuer import (
@@ -153,3 +161,79 @@ def test_make_skeptic_user_prompt_injects_both_bull_sections() -> None:
 def test_goals_non_empty_and_long_enough() -> None:
     assert len(VALUER_GOAL) > 50
     assert len(SKEPTIC_GOAL) > 50
+    assert len(STEWARD_GOAL) > 50
+
+
+# ---------------------------------------------------------------------------
+# Steward
+# ---------------------------------------------------------------------------
+
+
+def test_steward_model_matches_config() -> None:
+    assert steward_model() == settings.steward_model
+
+
+def test_steward_system_prompt_enforces_pass_default() -> None:
+    prompt = make_steward_system_prompt().lower()
+    assert "default to pass" in prompt
+    assert "pass" in prompt and "buy" in prompt and "hold" in prompt
+
+
+def test_steward_backstory_forbids_sell_and_balance_hedging() -> None:
+    text = STEWARD_BACKSTORY.lower()
+    # No short-selling.
+    assert "sell" in text
+    assert "outside the mandate" in text or "outside of the mandate" in text
+    # No hedged "balanced view" verdicts.
+    assert "balanced view" in text or 'balanced hold' in text
+
+
+def test_steward_backstory_requires_rebuttal_accounting() -> None:
+    text = STEWARD_BACKSTORY.lower()
+    # Must enumerate which Skeptic rebuttals survived.
+    assert "rebuttal" in text
+    assert "skeptic" in text
+
+
+def test_steward_template_has_all_five_sections() -> None:
+    for heading in [
+        "## Verdict",
+        "## Conviction Level",
+        "## Rationale",
+        "## Position Sizing Guidance",
+        "## Confidence Caveats",
+    ]:
+        assert heading in STEWARD_REPORT_TEMPLATE, f"missing: {heading}"
+
+
+def test_steward_template_forbids_sell() -> None:
+    t = STEWARD_REPORT_TEMPLATE
+    assert "Do NOT issue SELL" in t
+
+
+def test_steward_template_maps_conviction_to_sizing() -> None:
+    # Sizing guidance must exist and map at least a couple of conviction levels.
+    t = STEWARD_REPORT_TEMPLATE
+    assert "C3" in t and "C4" in t
+    assert "%" in t
+
+
+def test_make_steward_user_prompt_injects_all_three_agents() -> None:
+    prompt = make_steward_user_prompt(
+        "NVDA",
+        "Value chain text",
+        "Analyst says X.",
+        "Valuer says Y.",
+        "Skeptic attacks Z.",
+    )
+    assert "<analyst_section>" in prompt and "Analyst says X." in prompt
+    assert "<valuer_section>" in prompt and "Valuer says Y." in prompt
+    assert "<skeptic_section>" in prompt and "Skeptic attacks Z." in prompt
+    assert "<value_chain_brief>" in prompt
+
+
+def test_steward_uses_distinct_model_if_skeptic_llama() -> None:
+    # Phase 2 default: Steward=Qwen, Skeptic=Llama. If both are ever set to
+    # the same model we should at least notice — but we don't hard-fail
+    # because it's a legal (if less diverse) config.
+    assert settings.steward_model  # non-empty

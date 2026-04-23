@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     analyst_model: str = Field(default="llama3.1:8b")
     valuer_model: str = Field(default="llama3.1:8b")
     skeptic_model: str = Field(default="qwen2.5:7b")
+    steward_model: str = Field(default="qwen2.5:7b")
 
     llm_temperature: float = Field(
         default=0.0,
