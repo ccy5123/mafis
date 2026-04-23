@@ -374,3 +374,265 @@ def test_audit_apply_renders_speculative_downgrade() -> None:
     assert "Speculative-only NEUTRALIZATIONs" in out
     assert "Effective labels used for matrix" in out
     assert "PASS" in out
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Defender-aware audit (Defender section overrides Steward labels)
+# ---------------------------------------------------------------------------
+
+
+_REPORT_WITH_DEFENDER_1D_4C = """\
+# Part 5 · Defender
+
+### Response to Skeptic #1
+**Label:** DEFENDED
+Evidence: cites $96B FCF [Source: fetch.free_cash_flow].
+
+### Response to Skeptic #2
+**Label:** CONCEDED
+
+### Response to Skeptic #3
+**Label:** CONCEDED
+
+### Response to Skeptic #4
+**Label:** CONCEDED
+
+### Response to Skeptic #5
+**Label:** CONCEDED
+
+**Tally:** 1 DEFENDED, 4 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+- **NEUTRALIZED**: Cash flow is strong [Source: fetch.free_cash_flow].
+- **SURVIVED**: Growth sustainability unclear.
+"""
+
+
+def test_audit_parses_defender_labels() -> None:
+    r = audit_steward_section(_REPORT_WITH_DEFENDER_1D_4C)
+    assert r.defender_present is True
+    assert r.defender_defended_count == 1
+    assert r.defender_conceded_count == 4
+
+
+def test_audit_detects_steward_mistranslation_of_defender() -> None:
+    """Defender says 1D/4C (= 1N/4S). Steward says 1N/1S. That's a
+    mis-translation — Steward ignored 3 of the 4 CONCEDED."""
+    r = audit_steward_section(_REPORT_WITH_DEFENDER_1D_4C)
+    assert r.steward_mistranslated is True
+    # Matrix uses Defender counts: 1 DEFENDED, 4 CONCEDED → PASS C1.
+    assert r.effective_neutralized == 1
+    assert r.effective_survived == 4
+    assert r.corrected_verdict == "PASS"
+    assert r.corrected_conviction == 1
+    assert r.violation is True
+
+
+def test_audit_uses_defender_counts_over_steward_when_consistent() -> None:
+    """If Defender says 2D/3C and Steward matches (2N/3S), no mis-
+    translation is flagged, but the Defender counts still drive the
+    matrix output.
+    """
+    text = """\
+# Part 5 · Defender
+### Response to Skeptic #1
+**Label:** DEFENDED
+### Response to Skeptic #2
+**Label:** DEFENDED
+### Response to Skeptic #3
+**Label:** CONCEDED
+### Response to Skeptic #4
+**Label:** CONCEDED
+### Response to Skeptic #5
+**Label:** CONCEDED
+
+**Tally:** 2 DEFENDED, 3 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+HOLD
+
+## Conviction Level
+Conviction: 1
+
+## Rationale
+- **NEUTRALIZED**: A [Source: fetch.revenue].
+- **NEUTRALIZED**: B [Source: fetch.net_income].
+- **SURVIVED**: C.
+- **SURVIVED**: D.
+- **SURVIVED**: E.
+"""
+    r = audit_steward_section(text)
+    assert r.steward_mistranslated is False
+    assert r.defender_defended_count == 2
+    assert r.defender_conceded_count == 3
+    # S > N → PASS per the graduated matrix. Steward said HOLD C1
+    # which is too optimistic.
+    assert r.corrected_verdict == "PASS"
+
+
+def test_audit_falls_back_to_tally_when_labels_missing() -> None:
+    """If per-line Label: lines are malformed, the Tally: summary is the
+    backup source of truth.
+    """
+    text = """\
+# Part 5 · Defender
+(no per-response labels detected due to formatting drift)
+
+**Tally:** 3 DEFENDED, 2 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 3
+
+## Rationale
+- **NEUTRALIZED**: A [Source: fetch.revenue].
+- **SURVIVED**: B.
+"""
+    r = audit_steward_section(text)
+    assert r.defender_defended_count == 3
+    assert r.defender_conceded_count == 2
+
+
+def test_audit_no_defender_section_behaves_like_phase_1(tmp_path: None) -> None:
+    """Legacy 5-agent runs without a Defender section should still work —
+    the matrix falls back to Steward self-labels.
+    """
+    r = audit_steward_section(_ACTUAL_BUG_ONE_SURVIVED_BUT_BUY_C4)
+    assert r.defender_present is False
+    assert r.defender_defended_count == 0
+    assert r.defender_conceded_count == 0
+    # Matrix still catches the BUY C4 verdict for a 1N+1S Steward pattern.
+    assert r.corrected_verdict == "HOLD"
+
+
+def test_apply_audit_renders_defender_block_when_mistranslated() -> None:
+    r = audit_steward_section(_REPORT_WITH_DEFENDER_1D_4C)
+    out = apply_audit_to_section(_REPORT_WITH_DEFENDER_1D_4C, r)
+    assert "Defender labels (authoritative)" in out
+    assert "DEFENDED=1" in out
+    assert "CONCEDED=4" in out
+    assert "mis-translated" in out
+    assert "PASS" in out
+
+
+def test_matrix_bear_majority_forces_pass() -> None:
+    """Graduated matrix: S > N should resolve to PASS regardless of
+    count magnitudes.
+    """
+    text = """\
+# Part 5 · Defender
+### Response to Skeptic #1
+**Label:** CONCEDED
+### Response to Skeptic #2
+**Label:** CONCEDED
+### Response to Skeptic #3
+**Label:** CONCEDED
+
+**Tally:** 0 DEFENDED, 3 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 2
+
+## Rationale
+- **NEUTRALIZED**: Some hand-wave [Source: fetch.revenue].
+"""
+    r = audit_steward_section(text)
+    assert r.corrected_verdict == "PASS"
+
+
+def test_matrix_bull_majority_allows_hold() -> None:
+    """Graduated matrix: N > S with some S should resolve to HOLD,
+    not BUY — the presence of any S demands at least some caution.
+    """
+    text = """\
+# Part 5 · Defender
+### Response to Skeptic #1
+**Label:** DEFENDED
+### Response to Skeptic #2
+**Label:** DEFENDED
+### Response to Skeptic #3
+**Label:** DEFENDED
+### Response to Skeptic #4
+**Label:** DEFENDED
+### Response to Skeptic #5
+**Label:** CONCEDED
+
+**Tally:** 4 DEFENDED, 1 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+- **NEUTRALIZED**: All four defended [Source: fetch.revenue].
+- **SURVIVED**: One conceded.
+"""
+    r = audit_steward_section(text)
+    # 4D/1C → N=4, S=1, S < N → HOLD C2 ceiling
+    assert r.effective_neutralized == 4
+    assert r.effective_survived == 1
+    assert r.corrected_verdict == "HOLD"
+
+
+def test_matrix_zero_survived_allows_buy() -> None:
+    text = """\
+# Part 5 · Defender
+### Response to Skeptic #1
+**Label:** DEFENDED
+### Response to Skeptic #2
+**Label:** DEFENDED
+
+**Tally:** 2 DEFENDED, 0 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 5
+
+## Rationale
+- **NEUTRALIZED**: X [Source: fetch.revenue].
+- **NEUTRALIZED**: Y [Source: fetch.net_income].
+"""
+    r = audit_steward_section(text)
+    # Steward correctly said BUY; verdict not over-optimistic vs ceiling BUY C5.
+    assert r.violation is False
+    assert r.defender_defended_count == 2
+    assert r.defender_conceded_count == 0

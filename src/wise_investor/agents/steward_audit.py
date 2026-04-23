@@ -69,18 +69,45 @@ _SPECULATIVE_MARKERS: list[re.Pattern[str]] = [
 _CITATION_RE = re.compile(r"\[Source:", re.IGNORECASE)
 
 
+# Defender section parsing (Phase 2 debate round). The Defender emits
+# one `**Label:** DEFENDED` or `**Label:** CONCEDED` line per response,
+# and a closing `**Tally:** X DEFENDED, Y CONCEDED` line. Either source
+# is authoritative; we prefer the per-line count because it's harder
+# for the LLM to drift on (it'd require inconsistent labels).
+_DEFENDER_HEADING_RE = re.compile(
+    r"^#\s*Part\s*\d+\s*·\s*Defender\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_DEFENDER_LABEL_LINE_RE = re.compile(
+    r"(?im)^\s*\*{0,2}Label\s*\*{0,2}\s*:?\s*\*{0,2}\s*(DEFENDED|CONCEDED)\s*\*{0,2}"
+)
+_DEFENDER_TALLY_RE = re.compile(
+    # Matches "Tally:", "**Tally:**", "**Tally**:" — any bold/colon
+    # permutation the prompt has shipped with, followed by the two
+    # integer labels and their keywords.
+    r"(?i)\*{0,2}Tally:?\*{0,2}\s*:?\s*(\d+)\s*DEFENDED\s*,?\s*(\d+)\s*CONCEDED"
+)
+
+
 @dataclass
 class StewardAuditResult:
     """Outcome of auditing a Steward section."""
 
     verdict: str | None       # parsed BUY / HOLD / PASS (None if unparseable)
     conviction: int | None    # parsed 1-5
-    neutralized_count: int    # raw NEUTRALIZED label count
-    survived_count: int       # raw SURVIVED label count
+    neutralized_count: int    # raw NEUTRALIZED label count in Steward
+    survived_count: int       # raw SURVIVED label count in Steward
     invalid_neutralized_count: int = 0   # NEUTRALIZED paragraphs that are
                                          # pure speculation (no `[Source: ]`)
-    effective_neutralized: int = 0  # raw - invalid
-    effective_survived: int = 0     # raw + invalid
+    effective_neutralized: int = 0  # matrix input (post all reclassification)
+    effective_survived: int = 0     # matrix input
+    # Phase 2 debate round — when a Defender section is present, its
+    # DEFENDED/CONCEDED counts become authoritative for the matrix,
+    # superseding Steward self-labels that might mis-translate.
+    defender_present: bool = False
+    defender_defended_count: int = 0
+    defender_conceded_count: int = 0
+    steward_mistranslated: bool = False
     violation: bool = False   # True if verdict breaks the discipline matrix
     corrected_verdict: str | None = None   # verdict the matrix requires
     corrected_conviction: int | None = None
@@ -230,25 +257,77 @@ def _assess_neutralizations(text: str) -> tuple[int, list[tuple[str, list[str]]]
     return (len(invalid_details), invalid_details)
 
 
+def _extract_defender_section(text: str) -> str | None:
+    """Slice out the `# Part N · Defender` section. Returns None if no
+    Defender heading is detected (legacy 5-agent runs).
+    """
+    m = _DEFENDER_HEADING_RE.search(text)
+    if m is None:
+        return None
+    start = m.end()
+    next_part = re.search(
+        r"^#\s*Part\s*\d+\s*·", text[start:], re.IGNORECASE | re.MULTILINE
+    )
+    end = start + (next_part.start() if next_part else len(text) - start)
+    return text[start:end]
+
+
+def _parse_defender_labels(section: str) -> tuple[int, int]:
+    """Return (defended_count, conceded_count) for the Defender section.
+
+    Prefers per-response `**Label:** DEFENDED|CONCEDED` lines; falls
+    back to the closing `**Tally:** X DEFENDED, Y CONCEDED` summary if
+    per-line parsing yields zero of both (indicating a format drift).
+    """
+    defended = 0
+    conceded = 0
+    for m in _DEFENDER_LABEL_LINE_RE.finditer(section):
+        label = m.group(1).upper()
+        if label == "DEFENDED":
+            defended += 1
+        elif label == "CONCEDED":
+            conceded += 1
+
+    if defended == 0 and conceded == 0:
+        tally_m = _DEFENDER_TALLY_RE.search(section)
+        if tally_m is not None:
+            try:
+                defended = int(tally_m.group(1))
+                conceded = int(tally_m.group(2))
+            except (ValueError, IndexError):
+                pass
+    return (defended, conceded)
+
+
 def _required_verdict_ceiling(
     neutralized: int, survived: int
 ) -> tuple[str, int]:
-    """Apply the discipline matrix to (N, S) label counts.
+    """Apply the graduated discipline matrix to (N, S) label counts.
 
-    Returns (max_verdict, max_conviction). BUY is only available when
-    there are NO SURVIVED labels among the top-two rebuttals. We treat
-    `survived == 0` as "both neutralized" regardless of whether two
-    NEUTRALIZED labels were explicitly emitted, so that templates that
-    only label the weak links still resolve correctly.
+    Phase 1 matrix treated N and S as "top-two rebuttals" only:
+      S == 0 → BUY,  1 N + 1 S → HOLD,  2 S → PASS.
+
+    Phase 2 debate produces 5 rebuttals with Defender DEFENDED/CONCEDED
+    labels. The ceiling needs to scale with the Bull/Bear balance:
+
+      S == 0 and N >= 1:  BUY C5 (full defense)
+      S > N:              PASS C1 (Bear majority — most rebuttals stand)
+      S == N and N >= 1:  HOLD C2 (tied)
+      0 < S < N:          HOLD C2 (Bull majority with at least one
+                                   conceded rebuttal — Bull wins but
+                                   with caveats)
+
+    Degenerate (both 0) → BUY C5 (audit surfaces the anomaly separately).
     """
     if survived == 0 and neutralized >= 1:
         return ("BUY", 5)
-    if survived >= 1 and neutralized >= 1:
-        return ("HOLD", 2)
-    if survived >= 1 and neutralized == 0:
+    if survived > neutralized:
         return ("PASS", 1)
-    # No labels emitted at all — degenerate case, allow the Steward's
-    # own verdict to stand; audit only flags this as a warning later.
+    if survived == neutralized and survived >= 1:
+        return ("HOLD", 2)
+    if 0 < survived < neutralized:
+        return ("HOLD", 2)
+    # Fallback (both zero — no labels emitted)
     return ("BUY", 5)
 
 
@@ -292,9 +371,43 @@ def audit_steward_section(text: str) -> StewardAuditResult:
                 f"(speculative markers: {', '.join(sorted(set(markers)))})"
             )
         notes.append(
-            f"Effective counts: NEUTRALIZED={effective_neutralized}, "
-            f"SURVIVED={effective_survived}."
+            f"Effective counts (Steward-side): NEUTRALIZED="
+            f"{effective_neutralized}, SURVIVED={effective_survived}."
         )
+
+    # Phase 2 debate: if Defender section exists, its labels are the
+    # authoritative count for the discipline matrix. The Steward's job
+    # was to COPY Defender labels; we detect and flag mis-translation.
+    defender_section = _extract_defender_section(text)
+    defender_present = defender_section is not None
+    defender_defended = 0
+    defender_conceded = 0
+    steward_mistranslated = False
+    if defender_present:
+        defender_defended, defender_conceded = _parse_defender_labels(
+            defender_section or ""
+        )
+        notes.append(
+            f"Defender labels parsed: DEFENDED={defender_defended}, "
+            f"CONCEDED={defender_conceded}."
+        )
+        if defender_defended > 0 or defender_conceded > 0:
+            # Steward should have produced N = DEFENDED and S = CONCEDED
+            # (after our speculative reclassification). Detect drift.
+            if (
+                effective_neutralized != defender_defended
+                or effective_survived != defender_conceded
+            ):
+                steward_mistranslated = True
+                notes.append(
+                    f"MIS-TRANSLATION: Steward reports "
+                    f"N={effective_neutralized}/S={effective_survived} but "
+                    f"Defender says DEFENDED={defender_defended}/"
+                    f"CONCEDED={defender_conceded}. Overriding matrix "
+                    f"input with Defender counts."
+                )
+            effective_neutralized = defender_defended
+            effective_survived = defender_conceded
 
     max_verdict, max_conviction = _required_verdict_ceiling(
         effective_neutralized, effective_survived
@@ -316,6 +429,10 @@ def audit_steward_section(text: str) -> StewardAuditResult:
             invalid_neutralized_count=invalid_count,
             effective_neutralized=effective_neutralized,
             effective_survived=effective_survived,
+            defender_present=defender_present,
+            defender_defended_count=defender_defended,
+            defender_conceded_count=defender_conceded,
+            steward_mistranslated=steward_mistranslated,
             violation=False,
             corrected_verdict=None,
             corrected_conviction=None,
@@ -349,6 +466,15 @@ def audit_steward_section(text: str) -> StewardAuditResult:
             f"OK: Verdict={verdict}, Conviction={conviction} consistent with matrix."
         )
 
+    # If Steward mis-translated Defender labels, that alone is a
+    # violation worth surfacing in the audit note — even if by luck the
+    # mis-translation didn't change the verdict ceiling. Readers need to
+    # see that the narrative doesn't match the Defender's evidence.
+    if steward_mistranslated and not violation:
+        violation = True
+        corrected_verdict = max_verdict
+        corrected_conviction = max_conviction
+
     return StewardAuditResult(
         verdict=verdict,
         conviction=conviction,
@@ -357,6 +483,10 @@ def audit_steward_section(text: str) -> StewardAuditResult:
         invalid_neutralized_count=invalid_count,
         effective_neutralized=effective_neutralized,
         effective_survived=effective_survived,
+        defender_present=defender_present,
+        defender_defended_count=defender_defended,
+        defender_conceded_count=defender_conceded,
+        steward_mistranslated=steward_mistranslated,
         violation=violation,
         corrected_verdict=corrected_verdict,
         corrected_conviction=corrected_conviction,
@@ -379,7 +509,7 @@ def apply_audit_to_section(steward_text: str, result: StewardAuditResult) -> str
         "",
         "### System Audit — Discipline Matrix Enforcement",
         "",
-        f"- Raw labels: NEUTRALIZED={result.neutralized_count}, "
+        f"- Raw Steward labels: NEUTRALIZED={result.neutralized_count}, "
         f"SURVIVED={result.survived_count}.",
     ]
     if result.invalid_neutralized_count > 0:
@@ -387,11 +517,23 @@ def apply_audit_to_section(steward_text: str, result: StewardAuditResult) -> str
             f"- Speculative-only NEUTRALIZATIONs (reclassified as SURVIVED): "
             f"{result.invalid_neutralized_count}."
         )
+    if result.defender_present:
         audit_lines.append(
-            f"- Effective labels used for matrix: "
-            f"NEUTRALIZED={result.effective_neutralized}, "
-            f"SURVIVED={result.effective_survived}."
+            f"- Defender labels (authoritative): "
+            f"DEFENDED={result.defender_defended_count}, "
+            f"CONCEDED={result.defender_conceded_count}."
         )
+        if result.steward_mistranslated:
+            audit_lines.append(
+                "- **Steward mis-translated Defender labels.** The Defender's "
+                "counts take precedence for the verdict matrix; the Steward "
+                "narrative above is preserved for audit transparency."
+            )
+    audit_lines.append(
+        f"- Effective labels used for matrix: "
+        f"NEUTRALIZED={result.effective_neutralized}, "
+        f"SURVIVED={result.effective_survived}."
+    )
     audit_lines.extend(
         [
             f"- Reported Verdict: **{result.verdict}** / Conviction: "
