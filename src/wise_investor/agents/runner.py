@@ -626,6 +626,20 @@ def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
         lambda: format_macro_snapshot(get_macro_snapshot()),
     )
 
+    # Phase 3D: 10-K RAG excerpts for qualitative narrative grounding.
+    # Four fixed queries (business / moat / risk_factors / mdna) retrieve
+    # the most relevant passages from the indexed filing and feed them to
+    # every agent downstream. Fails soft: if the ticker is not in SEC
+    # EDGAR (e.g. Korean listings) all four entries become uniform ERROR
+    # strings so the schema is stable.
+    try:
+        from wise_investor.rag.integration import gather_and_format_for_pre_gather
+        edgar_bodies = gather_and_format_for_pre_gather(symbol)
+    except Exception as e:
+        logger.warning("RAG gather wrapper failed for %s: %s", symbol, e)
+        edgar_bodies = {}
+    facts.update(edgar_bodies)
+
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(
         json.dumps(facts, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -798,6 +812,15 @@ def _wrap_user_prompt_with_facts(
         "Code-fenced peer tables (```plaintext ... ```) are self-labelled by "
         "column headers; they do NOT need per-row citations. Tables outside "
         "code fences DO need citations.\n\n"
+        "=== 10-K EXCERPT CITATIONS ===\n"
+        "Qualitative claims sourced from `edgar.*` tool_output blocks "
+        "(business segments, moat, risk factors, MD&A) must be cited using "
+        "the [Cite as: ...] hint printed under each passage — copy it "
+        "verbatim. Example: '[Source: 10-K risk_factors, filed 2025-02-26]'. "
+        "Never paraphrase a 10-K excerpt without its citation. If no "
+        "`edgar.*` passage supports a qualitative claim, either omit the "
+        "claim or mark it as '[from earnings call transcript / public "
+        "reporting — no 10-K passage]' so the Skeptic can audit.\n\n"
         + facts_block
         + "\n</pre_gathered_tool_outputs>\n\n"
     )
