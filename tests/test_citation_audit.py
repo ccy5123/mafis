@@ -216,6 +216,61 @@ def test_render_formats_markdown_block_on_violation() -> None:
 # ---------------------------------------------------------------------------
 
 
+_REPORT_WITH_SKEPTIC_NO_EDGAR_RISK = """\
+# Part 4 · Skeptic
+
+## Attack on the Bull Thesis
+1. Target claim: X — attacks vulnerable link #2 [per value chain brief].
+2. Target claim: Y — attacks vulnerable link #4 [per value chain brief].
+"""
+
+
+_REPORT_WITH_SKEPTIC_CITES_EDGAR_RISK = """\
+# Part 4 · Skeptic
+
+## Attack on the Bull Thesis
+1. Target claim: X — edgar risk-factors passage shows dependence on a
+   single foundry [Source: 10-K risk_factors, filed 2026-02-25].
+"""
+
+
+def test_audit_flags_skeptic_without_edgar_risk_factors_citation() -> None:
+    r = audit_edgar_citations(
+        _REPORT_WITH_SKEPTIC_NO_EDGAR_RISK, symbol="NVDA", search_fn=lambda **k: []
+    )
+    assert r.skeptic_missing_edgar_risk is True
+    assert r.violation is True
+
+
+def test_audit_does_not_flag_skeptic_with_edgar_risk_citation() -> None:
+    r = audit_edgar_citations(
+        _REPORT_WITH_SKEPTIC_CITES_EDGAR_RISK,
+        symbol="NVDA",
+        search_fn=lambda **k: [],
+    )
+    assert r.skeptic_missing_edgar_risk is False
+
+
+def test_render_includes_skeptic_mandate_section_on_violation() -> None:
+    r = audit_edgar_citations(
+        _REPORT_WITH_SKEPTIC_NO_EDGAR_RISK, symbol="NVDA", search_fn=lambda **k: []
+    )
+    md = render_citation_audit_section(r)
+    assert "Skeptic mandate violation" in md
+    assert "Risk Factors" in md
+
+
+def test_render_empty_when_skeptic_and_edgar_both_ok() -> None:
+    text = """\
+# Part 4 · Skeptic
+
+[Source: 10-K risk_factors, filed 2026-02-25]
+"""
+    r = audit_edgar_citations(text, symbol="NVDA", search_fn=lambda **k: [])
+    assert r.violation is False
+    assert render_citation_audit_section(r) == ""
+
+
 def test_label_business_segments_maps_to_business_section() -> None:
     """The integration tests are a better place for full end-to-end
     coverage; here we just verify that the mapping dict is wired up.

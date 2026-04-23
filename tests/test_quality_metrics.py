@@ -78,6 +78,25 @@ def test_citation_rate_none_cited() -> None:
     assert r.passed is False
 
 
+def test_citation_rate_ignores_models_banner() -> None:
+    """The runner prints an italicized `_Models: ...` line listing which
+    LLM played each role. Those tokens (qwen2.5:7b-16k etc) are not
+    investment claims and must not count toward citation_rate.
+    """
+    report = """
+# NVDA Report
+
+_Models: Economist/qwen2.5:7b-16k · Analyst/qwen2.5:7b-16k · Valuer/qwen2.5:7b-16k_
+_Generated 2026-04-23._
+
+- **Revenue**: $215.94B — [Source: fetch.revenue]
+"""
+    r = citation_rate(report)
+    # Only the Revenue line counts; banner lines skipped. 100% cited.
+    assert r.value == 1.0
+    assert r.passed is True
+
+
 def test_citation_rate_ignores_code_fences() -> None:
     # Peer multiples tables are inside ``` fences and shouldn't be penalised.
     report = """

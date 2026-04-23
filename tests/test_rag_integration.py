@@ -186,7 +186,7 @@ def test_format_passages_includes_citation_hints() -> None:
     assert "NVDA" in body
     assert "filed 2025-02-26" in body
     # Each passage has a copy-paste-ready citation hint.
-    assert body.count("[Cite as: 10-K risk_factors, filed 2025-02-26]") == 2
+    assert body.count("[Source: 10-K risk_factors, filed 2025-02-26]") == 2
     assert "foundry partners" in body
 
 
@@ -246,7 +246,7 @@ def test_gather_and_format_populates_all_four_labels(
     assert set(out) == {f"edgar.{label}" for label in integration.DEFAULT_QUERIES}
     for body in out.values():
         assert "NVDA" in body
-        assert "[Cite as: 10-K" in body
+        assert "[Source: 10-K" in body
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,9 @@ def test_wrap_user_prompt_includes_10k_citation_rule() -> None:
     )
     # Universal citation rule now teaches the model to cite 10-K excerpts.
     assert "10-K EXCERPT CITATIONS" in wrapped
-    assert "[Cite as:" in wrapped
+    # Format switched to [Source: 10-K ..., filed ...] in commit tightening
+    # citation discipline; assert the same universal rule marker works.
+    assert "[Source: 10-K" in wrapped
     # The facts block is still rendered as <tool_output> XML.
     assert '<tool_output name="edgar.risk_factors">' in wrapped
 

@@ -136,7 +136,10 @@ def format_passages_as_tool_output(
     The body carries explicit per-passage citation hints so the LLM can
     copy-paste them verbatim into its report, e.g.:
 
-        [Cite as: 10-K risk_factors, filed 2025-02-26]
+        [Source: 10-K risk_factors, filed 2025-02-26]
+
+    The format matches the Universal Citation Rule's `[Source: ...]`
+    syntax so citation_rate / citation_audit recognize it uniformly.
     """
     if not section.passages:
         return f"No passages matched query for {symbol}/{section.label}."
@@ -159,7 +162,7 @@ def format_passages_as_tool_output(
         )
         lines.append(excerpt)
         lines.append(
-            f"[Cite as: 10-K {p.section}, filed {p.filing_date}]"
+            f"[Source: 10-K {p.section}, filed {p.filing_date}]"
         )
 
     return "\n".join(lines)

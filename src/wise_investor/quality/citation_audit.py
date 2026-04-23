@@ -97,10 +97,11 @@ class CitationAuditResult:
     citations_checked: int = 0
     ungrounded: list[UngroundedClaim] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    skeptic_missing_edgar_risk: bool = False
 
     @property
     def violation(self) -> bool:
-        return len(self.ungrounded) > 0
+        return len(self.ungrounded) > 0 or self.skeptic_missing_edgar_risk
 
 
 # A typical edgar passage doesn't contain year-on-year percent values
@@ -225,6 +226,24 @@ def audit_edgar_citations(
     result = CitationAuditResult(symbol=symbol.upper())
     sentences = _extract_sentences_with_edgar_citations(combined_text)
     result.citations_checked = len(sentences)
+
+    # Skeptic compliance check runs regardless of whether any edgar.*
+    # citations exist elsewhere — absence of an edgar.risk_factors
+    # citation in the Skeptic section is the violation.
+    skeptic_section = _extract_skeptic_section(combined_text)
+    if skeptic_section is not None:
+        cites_risk = re.search(
+            r"\[Source:\s*(?:edgar\.risk_factors|10-K\s+risk_factors)",
+            skeptic_section,
+            re.IGNORECASE,
+        )
+        if not cites_risk:
+            result.skeptic_missing_edgar_risk = True
+            result.notes.append(
+                "Skeptic section contains no [Source: 10-K risk_factors, ...] "
+                "citation — the Phase 3D mandate was not honored."
+            )
+
     if not sentences:
         result.notes.append("No edgar.* citations found in report.")
         return result
@@ -312,12 +331,27 @@ def audit_edgar_citations(
     return result
 
 
+def _extract_skeptic_section(text: str) -> str | None:
+    """Return the text of the `# Part 4 · Skeptic` section, or None if
+    the section boundary is not detected.
+    """
+    m = re.search(r"^#\s*Part\s*4\s*·\s*Skeptic\s*$", text, re.IGNORECASE | re.MULTILINE)
+    if m is None:
+        return None
+    start = m.end()
+    next_part = re.search(
+        r"^#\s*Part\s*\d+\s*·", text[start:], re.IGNORECASE | re.MULTILINE
+    )
+    end = start + (next_part.start() if next_part else len(text) - start)
+    return text[start:end]
+
+
 def render_citation_audit_section(result: CitationAuditResult) -> str:
     """Render the audit as a markdown block ready to append to the
     combined report. Returns an empty string when there are no
     violations (so the caller can unconditionally concatenate).
     """
-    if not result.ungrounded:
+    if not result.violation:
         return ""
 
     lines = [
@@ -326,26 +360,45 @@ def render_citation_audit_section(result: CitationAuditResult) -> str:
         "",
         "## System Audit — Citation Grounding",
         "",
-        f"Scanned {result.citations_checked} `[Source: edgar.*]` citation(s) "
-        f"in the report for {result.symbol}. "
-        f"**{len(result.ungrounded)}** numeric claim(s) could not be grounded "
-        "in the indexed 10-K passages:",
-        "",
     ]
-    for u in result.ungrounded:
-        lines.append(
-            f"- **Claim `{u.claim_number}`** in section `{u.section}` "
-            f"(nearest passage distance {u.nearest_distance:.3f}): "
-            f"{u.reason}."
-        )
-        lines.append(f"  - Sentence: _{u.sentence.strip()}_")
 
-    lines.append("")
-    lines.append(
-        "Readers should treat ungrounded edgar-cited numbers as "
-        "unverified — the LLM attached the citation but the specific "
-        "value does not appear in the retrieved passages."
-    )
+    if result.ungrounded:
+        lines.extend(
+            [
+                f"Scanned {result.citations_checked} `[Source: edgar.*]` "
+                f"citation(s) in the report for {result.symbol}. "
+                f"**{len(result.ungrounded)}** numeric claim(s) could not be "
+                "grounded in the indexed 10-K passages:",
+                "",
+            ]
+        )
+        for u in result.ungrounded:
+            lines.append(
+                f"- **Claim `{u.claim_number}`** in section `{u.section}` "
+                f"(nearest passage distance {u.nearest_distance:.3f}): "
+                f"{u.reason}."
+            )
+            lines.append(f"  - Sentence: _{u.sentence.strip()}_")
+        lines.append("")
+        lines.append(
+            "Readers should treat ungrounded edgar-cited numbers as "
+            "unverified — the LLM attached the citation but the specific "
+            "value does not appear in the retrieved passages."
+        )
+
+    if result.skeptic_missing_edgar_risk:
+        if lines[-1] != "":
+            lines.append("")
+        lines.append(
+            f"**Skeptic mandate violation:** the Skeptic section for "
+            f"{result.symbol} did not cite any `[Source: 10-K "
+            f"risk_factors, ...]` passage. Phase 3D's template requires at "
+            f"least ONE of the 5 rebuttals to ground in the filing's Risk "
+            f"Factors. Readers should regard the Skeptic's attacks as "
+            f"grounded only in the curated value chain brief, not in "
+            f"EDGAR-disclosed risks — a weaker form of red-team."
+        )
+
     return "\n".join(lines) + "\n"
 
 

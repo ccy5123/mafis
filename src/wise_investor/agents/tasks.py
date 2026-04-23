@@ -32,7 +32,7 @@ money, recent strategic direction. Facts only; no valuation comments.
 
 **10-K GROUNDING (MANDATORY):** At least ONE sentence in this section MUST
 quote or paraphrase a claim from the `edgar.business_segments` tool_output
-and end with its `[Cite as: ...]` hint copied verbatim. This forces the
+and end with its `[Source: 10-K ..., filed ...]` hint copied verbatim. This forces the
 Business Summary to reflect what the company actually says about itself
 in its latest 10-K, not what the model remembers from pretraining.
 
@@ -62,7 +62,7 @@ ecosystem, switching cost, IP, regulatory) vs erosion forces.
 
 **10-K GROUNDING (MANDATORY):** The structural-advantage paragraph MUST
 cite at least one claim from `edgar.moat_signals` with its verbatim
-`[Cite as: ...]` hint. If the edgar.moat_signals block is an ERROR or
+`[Source: 10-K ..., filed ...]` hint. If the edgar.moat_signals block is an ERROR or
 empty, write "no 10-K passage available" in place of the citation and
 omit the claim from the moat narrative.
 
@@ -97,12 +97,15 @@ This section has two subsections.
 "Warnings:" followed by anything other than "none", write a bullet in
 this exact format:
 - `<tool name>`: <the verbatim text that follows "Warnings:" including any
-  indented "- ..." sub-bullets>
+  indented "- ..." sub-bullets> [Source: <tool_name>]
 
 If a tool_output says "Warnings: none" you may omit it from the bullet
 list. Do NOT paraphrase warnings; copy them character-for-character.
-If a warning contains a number (e.g. an implied growth rate), end that
-bullet with [Source: <tool_name>].
+EVERY warning bullet MUST end with [Source: <tool_name>] — this is the
+citation-rate audit's scope and any warning line without a bracketed
+source counts as uncited. If the warning contains a number (divergence
+percent, growth rate, dollar amount), the trailing [Source: ...] covers
+it under the Universal Citation Rule.
 
 **Known unknowns (from value chain brief):** Copy the bullet list under
 the "Known unknowns (do not pretend to know)" heading of the value chain
@@ -289,7 +292,7 @@ numbered position or bolded title.
 
 **10-K GROUNDING (MANDATORY):** At least ONE of the 5 rebuttals MUST
 quote a risk from the `edgar.risk_factors` tool_output block and end
-the Counter-evidence/scenario line with the verbatim `[Cite as: ...]`
+the Counter-evidence/scenario line with the verbatim `[Source: 10-K ..., filed ...]`
 hint from that passage. This forces the Skeptic to attack on
 risks the filing itself discloses, not just on value-chain hypotheses.
 If `edgar.risk_factors` is an ERROR entry, note that in a line and

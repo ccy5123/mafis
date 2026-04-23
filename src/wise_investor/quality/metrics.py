@@ -157,6 +157,14 @@ def citation_rate(report: str) -> MetricResult:
     uncited_samples: list[str] = []
 
     for line in text_no_code.splitlines():
+        stripped = line.strip()
+        # Skip header metadata lines — the runner prints an italicized
+        # "_Models: ..." line listing which LLM played each role, and
+        # the version-banner "## Phase N" style lines. Those contain
+        # numbers ("7b-16k", "2026") that aren't investment claims and
+        # shouldn't dilute the citation rate.
+        if stripped.startswith("_Models:") or stripped.startswith("_Generated"):
+            continue
         nums = _numeric_tokens_in_line(line)
         if not nums:
             continue
@@ -165,7 +173,7 @@ def citation_rate(report: str) -> MetricResult:
             cited_numbers += len(nums)
         else:
             if len(uncited_samples) < 5:
-                uncited_samples.append(line.strip()[:120])
+                uncited_samples.append(stripped[:120])
 
     rate = (cited_numbers / total_numbers) if total_numbers > 0 else 1.0
     threshold = 0.80  # 80% of numeric claims should have inline citations
