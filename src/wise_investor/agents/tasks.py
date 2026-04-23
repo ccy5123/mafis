@@ -30,10 +30,22 @@ seven sections, in this order, with these exact H2 headings.
 Two to three short paragraphs: what the company sells, to whom, how it makes
 money, recent strategic direction. Facts only; no valuation comments.
 
+**10-K GROUNDING (MANDATORY):** At least ONE sentence in this section MUST
+quote or paraphrase a claim from the `edgar.business_segments` tool_output
+and end with its `[Cite as: ...]` hint copied verbatim. This forces the
+Business Summary to reflect what the company actually says about itself
+in its latest 10-K, not what the model remembers from pretraining.
+
 ## 2. Value Chain Context
 Summarize the upstream, peer, and downstream relationships that matter for
 durability. Cite the value chain brief when you use its claims, using the
 phrase "per the value chain brief" so the reader can trace it.
+
+**10-K GROUNDING (MANDATORY):** When you name a specific supplier, customer,
+or competitor that also appears in the `edgar.*` excerpts, add the 10-K
+citation alongside the value-chain citation, e.g. "[per the value chain
+brief; Source: 10-K business, filed 2026-02-25]". This lets the Skeptic
+distinguish claims grounded in the filing from claims we curated manually.
 
 ## 3. Financial Health
 Every numeric line in this section MUST follow this exact format:
@@ -46,9 +58,16 @@ from the calculate_per and calculate_ev_ebitda outputs.
 
 ## 4. Competitive Position / Moat
 Five-to-ten-year durability analysis. Structural advantages (scale,
-ecosystem, switching cost, IP, regulatory) vs erosion forces. Then quote
-the peer multiples table verbatim inside a fenced code block, and below it
-write two short paragraphs (OUTSIDE the code block):
+ecosystem, switching cost, IP, regulatory) vs erosion forces.
+
+**10-K GROUNDING (MANDATORY):** The structural-advantage paragraph MUST
+cite at least one claim from `edgar.moat_signals` with its verbatim
+`[Cite as: ...]` hint. If the edgar.moat_signals block is an ERROR or
+empty, write "no 10-K passage available" in place of the citation and
+omit the claim from the moat narrative.
+
+Then quote the peer multiples table verbatim inside a fenced code block,
+and below it write two short paragraphs (OUTSIDE the code block):
 1. Interpreting the target's relative positioning versus peers. EVERY
    line in these paragraphs that mentions a specific peer PER or
    EV/EBITDA number MUST end with [Source: get_peer_multiples].
@@ -268,6 +287,14 @@ At least 3 of the 5 rebuttals MUST ground in a specific entry from the
 value chain brief's "Vulnerable links" section. Name the entry by its
 numbered position or bolded title.
 
+**10-K GROUNDING (MANDATORY):** At least ONE of the 5 rebuttals MUST
+quote a risk from the `edgar.risk_factors` tool_output block and end
+the Counter-evidence/scenario line with the verbatim `[Cite as: ...]`
+hint from that passage. This forces the Skeptic to attack on
+risks the filing itself discloses, not just on value-chain hypotheses.
+If `edgar.risk_factors` is an ERROR entry, note that in a line and
+skip the 10-K-grounded rebuttal.
+
 === Check-then-write protocol ===
 
 Before writing each Downside quantification field, STOP. Scan the
@@ -379,11 +406,18 @@ Two subsections:
   USD-denominated equities. End the sentence with
   [Source: fred.DEXKOUS].
 - **Geopolitical risks relevant to the target**: two or three bullets
-  drawn ONLY from the value chain brief's "Geopolitical / regulatory"
-  and "Vulnerable links" subsections. Keep to risks with macro
-  character (sovereign / trade / currency), not firm-specific
-  platform defects. Each bullet cites
-  "per the value chain brief" with no tool citation needed.
+  drawn from (1) the value chain brief's "Geopolitical / regulatory"
+  and "Vulnerable links" subsections, AND (2) the `geo.snapshot`
+  tool_output block. Keep to risks with macro character (sovereign /
+  trade / currency), not firm-specific platform defects. Each bullet
+  either cites "per the value chain brief" (no tool citation needed)
+  OR carries a news citation copied verbatim from the snapshot —
+  "[Source: Google News, <outlet>, <YYYY-MM-DD>]" for headlines or
+  "[Source: GDELT <theme>, <domain>, <YYYY-MM-DD>]" for GDELT
+  articles. At least ONE bullet SHOULD carry a news citation when
+  `geo.snapshot` contains relevant items, so the Economist's
+  geopolitical read is grounded in actual recent events rather than
+  pretraining memory.
 
 Do NOT write a summary, a bottom line, or stock-specific implications.
 Downstream agents read your output and draw their own conclusions.

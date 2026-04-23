@@ -290,6 +290,20 @@ def test_pre_gather_facts_includes_edgar_entries(
         integration_mod, "gather_and_format_for_pre_gather", _stub_rag
     )
 
+    # Stub geopolitics too so pre_gather doesn't hit GDELT / Google News.
+    import wise_investor.geopolitics.snapshot as geo_snapshot_mod
+
+    monkeypatch.setattr(
+        geo_snapshot_mod,
+        "get_geopolitics_snapshot",
+        lambda sym: object(),
+    )
+    monkeypatch.setattr(
+        geo_snapshot_mod,
+        "format_geopolitics_snapshot",
+        lambda snap: "GEO_OK",
+    )
+
     facts = runner.pre_gather_facts("NVDA", use_cache=False)
     for label in integration_mod.DEFAULT_QUERIES:
         key = f"edgar.{label}"
@@ -298,6 +312,7 @@ def test_pre_gather_facts_includes_edgar_entries(
     # Existing keys still there.
     assert "calculate_per" in facts
     assert facts["fred.macro_snapshot"] == "MACRO_OK"
+    assert facts["geo.snapshot"] == "GEO_OK"
 
 
 def test_wrap_user_prompt_includes_10k_citation_rule() -> None:
@@ -311,3 +326,53 @@ def test_wrap_user_prompt_includes_10k_citation_rule() -> None:
     assert "[Cite as:" in wrapped
     # The facts block is still rendered as <tool_output> XML.
     assert '<tool_output name="edgar.risk_factors">' in wrapped
+
+
+def test_wrap_user_prompt_includes_geopolitical_citation_rule() -> None:
+    from wise_investor.agents.runner import _wrap_user_prompt_with_facts
+
+    wrapped = _wrap_user_prompt_with_facts(
+        "Task body.", {"geo.snapshot": "Google News: ... GDELT: ..."}
+    )
+    assert "GEOPOLITICAL / NEWS CITATIONS" in wrapped
+    assert "Google News" in wrapped
+    assert "GDELT" in wrapped
+    assert '<tool_output name="geo.snapshot">' in wrapped
+
+
+def test_pre_gather_handles_geo_failure_gracefully(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If GDELT or Google News raises, geo.snapshot becomes an ERROR
+    string rather than aborting the whole pre-gather.
+    """
+    from wise_investor.agents import runner
+    import wise_investor.geopolitics.snapshot as geo_snapshot_mod
+    import wise_investor.rag.integration as integration_mod
+
+    monkeypatch.setattr(runner, "FACTS_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(runner, "_facts_cache_path", lambda sym: tmp_path / f"{sym}.json")
+    monkeypatch.setattr(runner, "_exec_cross_validate_quote", lambda args: "CVQ")
+    monkeypatch.setattr(runner, "_exec_calculate_per", lambda args: "PER")
+    monkeypatch.setattr(runner, "_exec_calculate_ev_ebitda", lambda args: "EVE")
+    monkeypatch.setattr(runner, "_exec_get_peer_multiples", lambda args: "PEERS")
+    monkeypatch.setattr(runner, "_exec_reverse_dcf", lambda args: "RDCF")
+    monkeypatch.setattr(runner, "_exec_fetch_field", lambda args: f"FIELD:{args['field']}")
+    monkeypatch.setattr(runner, "get_macro_snapshot", lambda: object())
+    monkeypatch.setattr(runner, "format_macro_snapshot", lambda snap: "MACRO_OK")
+    monkeypatch.setattr(runner, "_load_peer_overrides_for", lambda sym: [])
+    monkeypatch.setattr(
+        integration_mod,
+        "gather_and_format_for_pre_gather",
+        lambda sym: {"edgar.business_segments": "OK"},
+    )
+
+    def _boom(sym: str):
+        raise RuntimeError("GDELT offline")
+
+    monkeypatch.setattr(geo_snapshot_mod, "get_geopolitics_snapshot", _boom)
+
+    facts = runner.pre_gather_facts("NVDA", use_cache=False)
+    assert facts["geo.snapshot"].startswith("ERROR:")
+    # Crew-critical facts still populated.
+    assert facts["calculate_per"] == "PER"

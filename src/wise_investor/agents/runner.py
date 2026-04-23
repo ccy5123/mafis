@@ -640,6 +640,23 @@ def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
         edgar_bodies = {}
     facts.update(edgar_bodies)
 
+    # Phase 3E-2: geopolitical context for the Economist.
+    # GDELT themes (ECON_TRADE_SANCTIONS, TRADE_WAR, EPU_POLICY) + Google
+    # News keyword feed give the Economist event-level context on top of
+    # FRED's numerical indicators. Fails soft per-source: each failure
+    # turns into an "ERROR: ..." string in its facts entry; the Economist
+    # prompt renders these as data-gap notes.
+    try:
+        from wise_investor.geopolitics.snapshot import (
+            get_geopolitics_snapshot,
+            format_geopolitics_snapshot,
+        )
+        geo_snapshot = get_geopolitics_snapshot(symbol)
+        facts["geo.snapshot"] = format_geopolitics_snapshot(geo_snapshot)
+    except Exception as e:
+        logger.warning("geopolitics snapshot failed for %s: %s", symbol, e)
+        facts["geo.snapshot"] = f"ERROR: geopolitics snapshot unavailable: {e}"
+
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(
         json.dumps(facts, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -821,6 +838,16 @@ def _wrap_user_prompt_with_facts(
         "`edgar.*` passage supports a qualitative claim, either omit the "
         "claim or mark it as '[from earnings call transcript / public "
         "reporting — no 10-K passage]' so the Skeptic can audit.\n\n"
+        "=== GEOPOLITICAL / NEWS CITATIONS ===\n"
+        "Claims about recent events (export controls, tariffs, sanctions, "
+        "M&A, regulatory actions) may cite the `geo.snapshot` tool_output "
+        "block. Use the format: '[Source: Google News, <outlet>, <YYYY-MM-DD>]' "
+        "for Google News headlines, or '[Source: GDELT <theme>, <domain>, "
+        "<YYYY-MM-DD>]' for GDELT articles. The outlet/date fields come "
+        "directly from the snapshot text — copy verbatim, do not invent. "
+        "Geopolitical context should be used when it directly affects the "
+        "target (supply chain, regulation, demand); generic macro events "
+        "belong to the Economist's Rate/Inflation sections, not here.\n\n"
         + facts_block
         + "\n</pre_gathered_tool_outputs>\n\n"
     )

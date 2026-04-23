@@ -57,3 +57,39 @@ def test_task_raises_when_value_chain_missing() -> None:
     agent = make_analyst()
     with pytest.raises(FileNotFoundError, match="value chain document"):
         make_analyst_task("ZZZZ", agent=agent)
+
+
+# ---------------------------------------------------------------------------
+# Edgar citation mandates (Phase 3D-strengthened prompts)
+# ---------------------------------------------------------------------------
+
+
+def test_analyst_template_mandates_edgar_business_citation() -> None:
+    agent = make_analyst()
+    task = make_analyst_task("NVDA", agent=agent)
+    # Business Summary section must require at least one edgar.business_segments citation.
+    assert "10-K GROUNDING (MANDATORY)" in task.description
+    assert "edgar.business_segments" in task.description
+
+
+def test_analyst_template_mandates_edgar_moat_citation() -> None:
+    agent = make_analyst()
+    task = make_analyst_task("NVDA", agent=agent)
+    assert "edgar.moat_signals" in task.description
+
+
+def test_skeptic_template_mandates_edgar_risk_citation() -> None:
+    from wise_investor.agents.tasks import SKEPTIC_REPORT_TEMPLATE
+
+    # At least one rebuttal must cite edgar.risk_factors.
+    assert "10-K GROUNDING (MANDATORY)" in SKEPTIC_REPORT_TEMPLATE
+    assert "edgar.risk_factors" in SKEPTIC_REPORT_TEMPLATE
+
+
+def test_economist_template_references_geo_snapshot() -> None:
+    from wise_investor.agents.tasks import ECONOMIST_REPORT_TEMPLATE
+
+    # Economist must cite news from geo.snapshot when relevant.
+    assert "geo.snapshot" in ECONOMIST_REPORT_TEMPLATE
+    assert "Google News" in ECONOMIST_REPORT_TEMPLATE
+    assert "GDELT" in ECONOMIST_REPORT_TEMPLATE
