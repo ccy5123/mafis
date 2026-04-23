@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -148,13 +149,25 @@ def _exec_calculate_ev_ebitda(args: dict[str, Any]) -> str:
 def _exec_get_peer_multiples(args: dict[str, Any]) -> str:
     symbol = str(args["symbol"]).upper()
     max_peers = int(args.get("max_peers", 5))
+    additional_peers = args.get("additional_peers") or None
     with FMPClient() as c:
-        t = get_peer_multiples_impl(symbol, client=c, max_peers=max_peers)
+        t = get_peer_multiples_impl(
+            symbol,
+            client=c,
+            max_peers=max_peers,
+            additional_peers=additional_peers,
+        )
     lines = [
         f"Peer multiples table — target {t.target_symbol} (as of {t.as_of or 'unknown'})",
-        f"{'Symbol':<8} {'Name':<28} {'MktCap':>10} {'PER':>8} {'EV/EBITDA':>10}",
-        "-" * 68,
     ]
+    if t.override_sources:
+        lines.append(
+            f"Manual peer overrides (from value chain brief): {', '.join(t.override_sources)}"
+        )
+    lines.append(
+        f"{'Symbol':<8} {'Name':<28} {'MktCap':>10} {'PER':>8} {'EV/EBITDA':>10}"
+    )
+    lines.append("-" * 68)
     for row in t.rows:
         lines.append(
             f"{row.symbol:<8} {(row.name or '')[:28]:<28} "
@@ -163,7 +176,71 @@ def _exec_get_peer_multiples(args: dict[str, Any]) -> str:
         )
         if row.warnings:
             lines.append(f"         warnings: {'; '.join(row.warnings)}")
+
+    if t.excluded:
+        lines.append("")
+        lines.append(
+            "Excluded peers (data quality — do NOT use for comparison):"
+        )
+        for row in t.excluded:
+            reason = next(
+                (w for w in row.warnings if w.startswith("excluded from comparison:")),
+                "excluded (reason unknown)",
+            )
+            reason_short = reason.replace("excluded from comparison: ", "")
+            lines.append(
+                f"  - {row.symbol} ({row.name or '?'}): {reason_short}"
+            )
+
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Peer override parsing from value chain brief
+# ---------------------------------------------------------------------------
+
+
+_PEER_OVERRIDE_HEADING_PATTERN = re.compile(
+    r"^##\s*Peer\s*Override\b", re.IGNORECASE | re.MULTILINE
+)
+# Line like: "- SMNEY — Siemens Energy ADR" → capture "SMNEY"
+_PEER_TICKER_PATTERN = re.compile(r"^[-*]\s+([A-Z][A-Z0-9.\-]{0,9})\b")
+
+
+def parse_peer_override(value_chain_text: str) -> list[str]:
+    """Extract ticker symbols from the '## Peer Override' section of a value
+    chain brief. Returns empty list if the section is absent, empty, or marks
+    "no override needed".
+
+    Format expected:
+        ## Peer Override
+        Any prose intro...
+        - TICKER — description
+        - OTHER — description
+
+    Case-insensitive heading match. Lines without a leading ticker are ignored.
+    """
+    m = _PEER_OVERRIDE_HEADING_PATTERN.search(value_chain_text)
+    if not m:
+        return []
+
+    # Slice from the heading to the next heading or end of text.
+    start = m.end()
+    tail = value_chain_text[start:]
+    next_heading = re.search(r"^##\s", tail, re.MULTILINE)
+    section = tail[: next_heading.start()] if next_heading else tail
+
+    tickers: list[str] = []
+    for line in section.splitlines():
+        tm = _PEER_TICKER_PATTERN.match(line.strip())
+        if tm:
+            ticker = tm.group(1).upper()
+            # Skip obvious non-ticker words like "NONE" or "NOTES"
+            if ticker in {"NONE", "NOTES", "SEE", "NO"}:
+                continue
+            if ticker not in tickers:
+                tickers.append(ticker)
+    return tickers
 
 
 def _exec_reverse_dcf(args: dict[str, Any]) -> str:
@@ -443,6 +520,27 @@ def _facts_cache_path(symbol: str) -> Path:
     return FACTS_CACHE_DIR / f"{symbol.upper()}_{stamp}.json"
 
 
+def _load_peer_overrides_for(symbol: str) -> list[str]:
+    """Read docs/value_chains/<SYMBOL>.md and extract Peer Override tickers.
+
+    Returns [] if the file or section is missing. Tolerant: never raises.
+    """
+    vc_path = (
+        Path(__file__).resolve().parents[3]
+        / "docs"
+        / "value_chains"
+        / f"{symbol.upper()}.md"
+    )
+    if not vc_path.exists():
+        return []
+    try:
+        text = vc_path.read_text(encoding="utf-8")
+    except Exception as e:
+        logger.warning("Could not read value chain file %s: %s", vc_path, e)
+        return []
+    return parse_peer_override(text)
+
+
 def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
     """Run every Phase 1A tool up front and return a dict of tool-name → output.
 
@@ -461,6 +559,14 @@ def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
     if use_cache and cache_path.exists():
         logger.info("Loading cached facts from %s", cache_path)
         return json.loads(cache_path.read_text(encoding="utf-8"))
+
+    peer_overrides = _load_peer_overrides_for(symbol)
+    if peer_overrides:
+        logger.info(
+            "Peer overrides for %s from value chain brief: %s",
+            symbol,
+            peer_overrides,
+        )
 
     # Partial-failure tolerant: if an individual tool errors (e.g. FMP quota
     # exhaustion mid-run), record the error text in place of the output so the
@@ -485,7 +591,13 @@ def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
     )
     facts["get_peer_multiples"] = _safe(
         "get_peer_multiples",
-        lambda: _exec_get_peer_multiples({"symbol": symbol, "max_peers": 5}),
+        lambda: _exec_get_peer_multiples(
+            {
+                "symbol": symbol,
+                "max_peers": 5,
+                "additional_peers": peer_overrides,
+            }
+        ),
     )
     facts["reverse_dcf"] = _safe(
         "reverse_dcf", lambda: _exec_reverse_dcf({"symbol": symbol})

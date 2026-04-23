@@ -55,7 +55,36 @@ class PeerMultipleRow(BaseModel):
 class PeerMultiplesTable(BaseModel):
     target_symbol: str
     as_of: str | None
-    rows: list[PeerMultipleRow]
+    rows: list[PeerMultipleRow]  # peers that passed the sanity filter
+    excluded: list[PeerMultipleRow] = Field(default_factory=list)
+    override_sources: list[str] = Field(default_factory=list)
+
+
+# Sanity filter thresholds. Peers whose headline multiples exceed these are
+# excluded from the comparative table because they come from near-zero
+# denominators (tiny earnings / EBITDA) and distort any median/quartile.
+SANITY_MAX_PER = 300.0
+SANITY_MAX_EV_EBITDA = 500.0
+
+
+def _is_sane_peer(row: PeerMultipleRow) -> tuple[bool, str]:
+    """Return (keep, reason). If keep=False, reason describes why excluded."""
+    per = row.per
+    ev = row.ev_ebitda
+    if per is None and ev is None:
+        return False, "both PER and EV/EBITDA unavailable"
+    if per is not None and per > SANITY_MAX_PER:
+        return False, f"PER={per:.2f} exceeds sanity threshold {SANITY_MAX_PER:.0f}x"
+    if per is not None and per < 0:
+        return False, f"PER={per:.2f} is negative (loss-making) — not comparable"
+    if ev is not None and ev > SANITY_MAX_EV_EBITDA:
+        return (
+            False,
+            f"EV/EBITDA={ev:.2f} exceeds sanity threshold {SANITY_MAX_EV_EBITDA:.0f}x",
+        )
+    if ev is not None and ev < 0:
+        return False, f"EV/EBITDA={ev:.2f} is negative (loss-making) — not comparable"
+    return True, ""
 
 
 def _diff_pct(computed: float | None, reference: float | None) -> float | None:
@@ -210,6 +239,7 @@ def get_peer_multiples(
     symbol: str,
     client: FinnhubClient | None = None,
     max_peers: int = 5,
+    additional_peers: list[str] | None = None,
 ) -> PeerMultiplesTable:
     """Build a peer-comparison table of PER and EV/EBITDA using Finnhub.
 
@@ -217,17 +247,40 @@ def get_peer_multiples(
     (for name, market cap) and metric (for pre-computed peTTM, evEbitdaTTM)
     for each peer. Uses TTM values for peer comparison because they are the
     most comparable across companies with different fiscal year ends.
+
+    `additional_peers` lets the caller inject hand-picked comparables (for
+    example, from a value chain brief's Peer Override section). These are
+    merged with Finnhub's auto-peers and de-duplicated. This matters for
+    newly-spun-off companies where Finnhub's auto-peer algorithm has not
+    yet latched onto the right cohort.
+
+    A sanity filter (see `_is_sane_peer` and SANITY_MAX_* constants) moves
+    peers with garbage multiples into a separate `excluded` list so the
+    LLM sees what was rejected without using those numbers for comparison.
     """
     fmp, owned = _with_client(client)
+    override_sources: list[str] = []
     try:
         peer_list = fmp.peers(symbol)
         symbols: list[str] = [symbol.upper()]
+
+        # Auto-peers first (they get priority up to max_peers).
         for s in peer_list:
             s_up = s.upper()
             if s_up != symbol.upper() and s_up not in symbols:
                 symbols.append(s_up)
             if len(symbols) >= max_peers + 1:
                 break
+
+        # Then merge in additional overrides (always included, even if they
+        # push total count beyond max_peers — the whole point of overrides is
+        # to guarantee the hand-picked cohort shows up).
+        if additional_peers:
+            for s in additional_peers:
+                s_up = s.upper()
+                if s_up != symbol.upper() and s_up not in symbols:
+                    symbols.append(s_up)
+                    override_sources.append(s_up)
 
         rows: list[PeerMultipleRow] = []
         target_as_of: str | None = None
@@ -282,10 +335,27 @@ def get_peer_multiples(
         if owned:
             fmp.close()
 
+    # Apply sanity filter. The target (row 0) is never excluded regardless of
+    # its own multiples — the report is about analysing it.
+    kept: list[PeerMultipleRow] = []
+    excluded: list[PeerMultipleRow] = []
+    for i, row in enumerate(rows):
+        if i == 0:
+            kept.append(row)
+            continue
+        keep, reason = _is_sane_peer(row)
+        if keep:
+            kept.append(row)
+        else:
+            row.warnings.append(f"excluded from comparison: {reason}")
+            excluded.append(row)
+
     return PeerMultiplesTable(
         target_symbol=symbol.upper(),
         as_of=target_as_of,
-        rows=rows,
+        rows=kept,
+        excluded=excluded,
+        override_sources=override_sources,
     )
 
 

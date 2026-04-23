@@ -10,6 +10,16 @@ dense and biased toward *dependencies and vulnerabilities* rather than
 marketing narrative. Numbers stated here are rough order-of-magnitude only;
 the Analyst must pull precise figures via FMP tools and cite them.
 
+## Peer Override
+
+Finnhub's `/stock/peers` for NVDA already returns a solid mega-cap tech
+cohort (GOOGL, MSFT, META, AMD, and similar). No override needed — the
+auto-peer set is adequate for NVDA valuation comparisons. This section
+is kept as a placeholder so the override mechanism is discoverable; if
+a future earnings cycle surfaces a peer gap, add tickers here.
+
+- (none)
+
 ## Upstream — Suppliers
 
 ### Chip fabrication
