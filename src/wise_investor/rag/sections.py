@@ -32,30 +32,47 @@ SECTION_MARKERS: dict[str, list[str]] = {
     "quant_market_risk": [r"Item\s*7A[.\s]+Quantitative"],
 }
 
-# Sections we slice up to (heading of the next part). Ordering matters —
-# we try each in order and pick the earliest match after the current
-# section's start.
-STOP_MARKERS: list[str] = [
-    r"Item\s*1A[.\s]+Risk\s*Factors",
-    r"Item\s*1B[.\s]+",
-    r"Item\s*2[.\s]+Properties",
-    r"Item\s*3[.\s]+Legal",
-    r"Item\s*4[.\s]+Mine\s*Safety",
-    r"Item\s*5[.\s]+Market\s*for",
-    r"Item\s*6[.\s]+",
-    r"Item\s*7[.\s]+Management",
-    r"Item\s*7A[.\s]+Quantitative",
-    r"Item\s*8[.\s]+Financial",
-    r"Item\s*9[.\s]+",
-    r"Item\s*10[.\s]+",
-    r"Item\s*11[.\s]+",
-    r"Item\s*12[.\s]+",
-    r"Item\s*13[.\s]+",
-    r"Item\s*14[.\s]+",
-    r"Item\s*15[.\s]+",
-    r"Item\s*16[.\s]+",
-    r"Signatures?\s*$",
-]
+# Per-section stop patterns. Each section key lists headings that come
+# AFTER it in the canonical 10-K outline — this matters because MD&A
+# (Item 7) routinely cross-references Item 1A Risk Factors, and a naive
+# union-of-all-stops list would terminate the MD&A body at that cross-
+# reference rather than at the real next section.
+#
+# Outline: Item 1, 1A, 1B, 1C, 2, 3, 4, Part II, Item 5, 6, 7, 7A, 8, ...
+SECTION_STOPS: dict[str, list[str]] = {
+    "business": [
+        r"Item\s*1A[.\s]+Risk\s*Factors",
+        r"Item\s*1B[.\s]+",
+        r"Item\s*2[.\s]+Properties",
+        r"Item\s*3[.\s]+Legal",
+        r"Item\s*4[.\s]+Mine\s*Safety",
+        r"Item\s*5[.\s]+Market\s*for",
+    ],
+    "risk_factors": [
+        r"Item\s*1B[.\s]+",
+        r"Item\s*1C[.\s]+",
+        r"Item\s*2[.\s]+Properties",
+        r"Item\s*3[.\s]+Legal",
+        r"Item\s*4[.\s]+Mine\s*Safety",
+        r"Item\s*5[.\s]+Market\s*for",
+    ],
+    "mdna": [
+        r"Item\s*7A[.\s]+Quantitative",
+        r"Item\s*8[.\s]+Financial",
+        r"Item\s*9[.\s]+",
+    ],
+    "quant_market_risk": [
+        r"Item\s*8[.\s]+Financial",
+        r"Item\s*9[.\s]+",
+        r"Item\s*10[.\s]+",
+    ],
+}
+
+# Legacy alias kept for backward-compat in tests that imported this name.
+# New code should use SECTION_STOPS[key] per section.
+STOP_MARKERS: list[str] = sorted(
+    {pat for patterns in SECTION_STOPS.values() for pat in patterns}
+)
 
 
 @dataclass
@@ -114,46 +131,91 @@ def _find_first(
     return earliest
 
 
+def _find_all(patterns: list[str], text: str) -> list[tuple[int, int]]:
+    """Return every (start, end) match across all `patterns`, sorted by
+    position. Used to locate the TOC entry vs the body heading, where
+    the body is always the last match.
+    """
+    hits: list[tuple[int, int]] = []
+    for pat in patterns:
+        for m in re.finditer(pat, text, re.IGNORECASE):
+            hits.append((m.start(), m.end()))
+    hits.sort()
+    # Deduplicate overlapping matches from different patterns at the same
+    # position (e.g. two regex variants both match the MD&A heading).
+    deduped: list[tuple[int, int]] = []
+    for start, end in hits:
+        if deduped and abs(start - deduped[-1][0]) < 50:
+            continue
+        deduped.append((start, end))
+    return deduped
+
+
+def _find_nearest_stop(
+    text: str, start: int, stop_patterns: list[str] | None = None
+) -> int | None:
+    """Find the earliest stop-pattern position strictly after `start`.
+
+    `stop_patterns` defaults to the union STOP_MARKERS for backward
+    compatibility, but _slice_section passes the section-specific list
+    from SECTION_STOPS so cross-references to earlier Items do not
+    terminate the body prematurely.
+
+    A 5-char self-match guard skips stops that overlap the heading we
+    just consumed.
+    """
+    patterns = stop_patterns if stop_patterns is not None else STOP_MARKERS
+    stop_idx: int | None = None
+    for stop_pat in patterns:
+        match = re.search(stop_pat, text[start:], re.IGNORECASE)
+        if match is None:
+            continue
+        candidate = start + match.start()
+        if candidate - start < 5:
+            continue
+        if stop_idx is None or candidate < stop_idx:
+            stop_idx = candidate
+    return stop_idx
+
+
 def _slice_section(text: str, key: str) -> str | None:
     """Find the section whose heading matches SECTION_MARKERS[key] and
     return its body up to the next stop marker.
+
+    10-K filings can contain the same "Item N." string many times:
+      - Once in the Table of Contents (tight cluster, body ~20 chars).
+      - Once as the actual body heading (body runs thousands of chars
+        until the next Item heading).
+      - Multiple times as cross-references inside other sections
+        ("see Item 1A. Risk Factors for details", body ~50 chars).
+
+    We pick the match whose candidate body — distance to the next stop
+    marker — is LARGEST. That uniquely identifies the real body heading
+    in every 10-K shape we've tested (NVDA 2026, AAPL 2024, etc.).
     """
     patterns = SECTION_MARKERS[key]
-    m = _find_first(patterns, text)
-    if m is None:
+    all_matches = _find_all(patterns, text)
+    if not all_matches:
         return None
 
-    # The text of many 10-K filings includes the heading both in the table
-    # of contents AND in the body. The TOC copy is usually first and very
-    # short (< 200 chars to the next item). Skip it and take the second
-    # occurrence when present.
-    first_start = m[0]
-    first_body_candidate = text[m[1] : m[1] + 2000]
-    # If the "body" right after first match contains another occurrence of
-    # the same pattern within the first 1500 chars, it's likely TOC.
-    second_m = _find_first(patterns, text, start=m[1])
-    if second_m is not None and (second_m[0] - m[1]) < 1500:
-        start = second_m[1]
-    else:
-        start = m[1]
+    stop_patterns = SECTION_STOPS.get(key)
+    best_body_size = 0
+    best_end = 0
+    best_stop: int | None = None
+    for m_start, m_end in all_matches:
+        stop = _find_nearest_stop(text, m_end, stop_patterns)
+        body_size = (stop if stop is not None else len(text)) - m_end
+        if body_size > best_body_size:
+            best_body_size = body_size
+            best_end = m_end
+            best_stop = stop
 
-    # Find the nearest stop marker after `start`.
-    stop_idx: int | None = None
-    for stop_pat in STOP_MARKERS:
-        match = re.search(stop_pat, text[start:], re.IGNORECASE)
-        if match:
-            candidate = start + match.start()
-            # The stop must not be identical to our own heading regex.
-            # Simple guard: require at least 200 chars of body before stop.
-            if candidate - start < 200:
-                continue
-            if stop_idx is None or candidate < stop_idx:
-                stop_idx = candidate
+    if best_body_size == 0:
+        return None
 
-    body = text[start:stop_idx] if stop_idx else text[start:]
+    body = text[best_end:best_stop] if best_stop else text[best_end:]
     body = body.strip()
     if len(body) < 100:
-        # Section exists but is too short to be useful — likely a TOC-only hit.
         return None
     return body
 

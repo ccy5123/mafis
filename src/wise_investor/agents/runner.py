@@ -967,6 +967,25 @@ def run_crew_synthesis(
         log_fn=log_fn,
     )
 
+    # -- Steward discipline audit (Python post-check)
+    # Empirically the 7B model emits SURVIVED/NEUTRALIZED labels correctly
+    # but then picks a Verdict that violates the label→verdict matrix.
+    # This check parses the labels deterministically and appends a System
+    # Audit note when the verdict is too optimistic. Narrative is left
+    # verbatim; only the appended note carries the corrected verdict.
+    from wise_investor.agents.steward_audit import (
+        audit_steward_section,
+        apply_audit_to_section,
+    )
+    audit = audit_steward_section(steward_text)
+    if audit.violation:
+        log(
+            f"[crew] Steward AUDIT VIOLATION: {audit.verdict} C{audit.conviction} "
+            f"→ {audit.corrected_verdict} C{audit.corrected_conviction} "
+            f"(N={audit.neutralized_count}, S={audit.survived_count})"
+        )
+        steward_text = apply_audit_to_section(steward_text, audit)
+
     total_elapsed = time.perf_counter() - t_start
 
     combined = _compose_combined_report(

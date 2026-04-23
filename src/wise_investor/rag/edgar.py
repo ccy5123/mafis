@@ -27,8 +27,11 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# SEC fair-use: identify the client with name + contact in the UA string.
-USER_AGENT = "MAFIS/0.1 personal-research (github.com/ccy5123/mafis)"
+# SEC fair-use policy REQUIRES the User-Agent to include company-or-project
+# name AND a contact vector (email). Without an email SEC returns 403 on
+# every request (verified empirically 2026-04-23).
+# Sample format per SEC: "Sample Company Name AdminContact@samplecompany.com"
+USER_AGENT = "MAFIS research ccy5123ccy@gmail.com"
 BASE_HEADERS = {"User-Agent": USER_AGENT, "Accept": "application/json"}
 HTML_HEADERS = {"User-Agent": USER_AGENT}
 
