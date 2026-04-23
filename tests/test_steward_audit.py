@@ -248,3 +248,129 @@ def test_apply_audit_appends_note_on_violation() -> None:
     assert "SURVIVED=1" in out
     # Original narrative preserved verbatim.
     assert _ACTUAL_BUG_ONE_SURVIVED_BUT_BUY_C4.strip() in out
+
+
+# ---------------------------------------------------------------------------
+# Speculative-only NEUTRALIZATIONs (reclassified as effective SURVIVED)
+# ---------------------------------------------------------------------------
+
+
+_RUN2_FAKE_NEUTRALIZATIONS = """\
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+The Bull thesis is strong cash flow. The Skeptic's strongest rebuttal is historical growth unsustainability.
+
+The Skeptic's first rebuttal, that no semiconductor company has historically sustained such high growth rates for an extended period, is NEUTRALIZED by the fact that NVIDIA's current market position and technological advancements support a higher growth rate than historical averages. The reverse DCF tool inputs include a discount rate of 10.00%, terminal growth of 2.50%, and high-growth years of 10, which are reasonable assumptions given the company's competitive edge.
+
+The second top Skeptic rebuttal is that TSMC's single point of supply risk could cost NVDA a full quarter of revenue in the event of a CoWoS outage. This is NEUTRALIZED by the fact that TSMC has diversified its foundry services and is working on alternative suppliers, reducing the likelihood of such an outage.
+"""
+
+
+def test_audit_catches_run2_fake_neutralizations() -> None:
+    """The exact failure from NVDA_20260423_1401.crew.md — two labels
+    marked NEUTRALIZED but the justifications are pure speculative
+    language with no [Source: ...] citations.
+    """
+    r = audit_steward_section(_RUN2_FAKE_NEUTRALIZATIONS)
+    assert r.verdict == "BUY"
+    assert r.neutralized_count == 2
+    assert r.survived_count == 0
+    # Both paragraphs reclassified as speculative-only.
+    assert r.invalid_neutralized_count == 2
+    assert r.effective_neutralized == 0
+    assert r.effective_survived == 2
+    # Matrix says PASS C1 when all are effectively SURVIVED.
+    assert r.violation is True
+    assert r.corrected_verdict == "PASS"
+    assert r.corrected_conviction == 1
+
+
+def test_audit_accepts_neutralization_with_concrete_citation() -> None:
+    """A NEUTRALIZED paragraph with a `[Source: ...]` citation passes
+    even if it contains speculative words — the citation grounds the
+    claim and the reader can judge whether the source refutes the
+    scenario.
+    """
+    text = """\
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+- **NEUTRALIZED**: Skeptic claim that margins could compress is refuted by NVDA's operating income of $130.39B [Source: fetch.operating_income].
+- **NEUTRALIZED**: Capital discipline shown by total debt of $7.47B [Source: fetch.total_debt].
+"""
+    r = audit_steward_section(text)
+    assert r.invalid_neutralized_count == 0
+    assert r.effective_neutralized == 2
+    assert r.effective_survived == 0
+    assert r.violation is False
+
+
+def test_audit_pure_speculation_without_citation_is_invalid() -> None:
+    """Isolated speculative neutralization, no citation — invalid."""
+    text = """\
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 3
+
+## Rationale
+- **NEUTRALIZED**: The moat should remain strong as NVIDIA is well-positioned.
+- **NEUTRALIZED**: Growth could continue given the competitive edge.
+"""
+    r = audit_steward_section(text)
+    assert r.invalid_neutralized_count == 2
+    assert r.effective_neutralized == 0
+    assert r.effective_survived == 2
+    assert r.violation is True
+    assert r.corrected_verdict == "PASS"
+
+
+def test_audit_mixed_one_valid_one_speculative() -> None:
+    text = """\
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+- **NEUTRALIZED**: FCF of $96B [Source: fetch.free_cash_flow] refutes the cash-burn concern.
+- **NEUTRALIZED**: TSMC risk should be manageable as they are working on diversification.
+"""
+    r = audit_steward_section(text)
+    # One valid, one speculative → 1 / 1
+    assert r.invalid_neutralized_count == 1
+    assert r.effective_neutralized == 1
+    assert r.effective_survived == 1
+    # Matrix: one N + one S → HOLD ceiling
+    assert r.violation is True
+    assert r.corrected_verdict == "HOLD"
+
+
+def test_audit_notes_list_each_reclassified_paragraph() -> None:
+    r = audit_steward_section(_RUN2_FAKE_NEUTRALIZATIONS)
+    reclassified_notes = [
+        n for n in r.notes if n.startswith("  - reclassified:")
+    ]
+    assert len(reclassified_notes) == 2
+    # Each reclassified entry names the speculative markers matched.
+    assert any("could" in n for n in reclassified_notes)
+    assert any("support a higher" in n.lower() for n in reclassified_notes)
+
+
+def test_audit_apply_renders_speculative_downgrade() -> None:
+    r = audit_steward_section(_RUN2_FAKE_NEUTRALIZATIONS)
+    out = apply_audit_to_section(_RUN2_FAKE_NEUTRALIZATIONS, r)
+    assert "Speculative-only NEUTRALIZATIONs" in out
+    assert "Effective labels used for matrix" in out
+    assert "PASS" in out

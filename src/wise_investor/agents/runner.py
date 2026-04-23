@@ -988,6 +988,37 @@ def run_crew_synthesis(
 
     total_elapsed = time.perf_counter() - t_start
 
+    # -- Citation grounding audit (Python post-check over the whole report)
+    # Scans every `[Source: edgar.*]` citation for numeric claims and
+    # verifies each claim appears in the indexed 10-K passages. Flags
+    # hallucinations where the LLM attached an edgar citation to a
+    # fabricated number.
+    from wise_investor.quality.citation_audit import (
+        audit_edgar_citations,
+        render_citation_audit_section,
+    )
+    try:
+        full_text_for_audit = (
+            economist_text + "\n" + analyst_text + "\n" +
+            valuer_text + "\n" + skeptic_text + "\n" + steward_text
+        )
+        citation_audit_result = audit_edgar_citations(
+            full_text_for_audit, symbol=symbol
+        )
+        citation_audit_markdown = render_citation_audit_section(
+            citation_audit_result
+        )
+        if citation_audit_result.ungrounded:
+            log(
+                f"[crew] Citation audit: "
+                f"{len(citation_audit_result.ungrounded)} ungrounded claim(s) "
+                f"across {citation_audit_result.citations_checked} "
+                f"edgar.* citation(s)"
+            )
+    except Exception as e:
+        logger.warning("citation audit crashed: %s", e)
+        citation_audit_markdown = ""
+
     combined = _compose_combined_report(
         symbol=symbol,
         economist_text=economist_text,
@@ -1001,6 +1032,9 @@ def run_crew_synthesis(
         skeptic_model=s_model,
         steward_model=st_model,
     )
+    # Append citation audit section (only if violations were found).
+    if citation_audit_markdown:
+        combined = combined.rstrip() + "\n" + citation_audit_markdown
 
     return CrewRunResult(
         symbol=symbol.upper(),
