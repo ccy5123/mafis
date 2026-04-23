@@ -27,12 +27,14 @@ from wise_investor.agents.runner import (  # noqa: E402
     pre_gather_facts,
     run_crew_synthesis,
 )
+from wise_investor.agents.economist import make_economist_system_prompt  # noqa: E402
 from wise_investor.agents.skeptic import make_skeptic_system_prompt  # noqa: E402
 from wise_investor.agents.steward import make_steward_system_prompt  # noqa: E402
 from wise_investor.agents.tasks import (  # noqa: E402
     CONTEXT_INSTRUCTIONS,
     REPORT_TEMPLATE,
     _load_value_chain,
+    make_economist_user_prompt,
     make_skeptic_user_prompt,
     make_steward_user_prompt,
     make_valuer_user_prompt,
@@ -77,11 +79,12 @@ def run(symbol: str) -> int:
     report_path = REPORTS_DIR / f"{symbol}_{stamp}.crew.md"
     meta_path = REPORTS_DIR / f"{symbol}_{stamp}.crew.meta.txt"
 
-    console.rule(f"[bold]Phase 2 — Full crew run for {symbol}[/bold]")
-    console.print(f"Analyst: [cyan]{settings.analyst_model}[/cyan]")
-    console.print(f"Valuer:  [cyan]{settings.valuer_model}[/cyan]")
-    console.print(f"Skeptic: [magenta]{settings.skeptic_model}[/magenta]")
-    console.print(f"Steward: [cyan]{settings.steward_model}[/cyan]")
+    console.rule(f"[bold]Phase 2 — Full 5-agent crew run for {symbol}[/bold]")
+    console.print(f"Economist: [cyan]{settings.analyst_model}[/cyan] (shares Analyst model)")
+    console.print(f"Analyst:   [cyan]{settings.analyst_model}[/cyan]")
+    console.print(f"Valuer:    [cyan]{settings.valuer_model}[/cyan]")
+    console.print(f"Skeptic:   [magenta]{settings.skeptic_model}[/magenta]")
+    console.print(f"Steward:   [cyan]{settings.steward_model}[/cyan]")
     console.print(f"Temperature: {settings.llm_temperature}  Seed: {settings.llm_seed}")
     console.print(f"Report → [dim]{report_path}[/dim]")
 
@@ -99,11 +102,13 @@ def run(symbol: str) -> int:
     # -- Load value chain brief once; reused by Valuer and Skeptic
     value_chain_text = _load_value_chain(symbol)
 
-    # -- Run the four-agent pipeline
+    # -- Run the full 5-agent pipeline
     result = run_crew_synthesis(
         symbol=symbol,
         value_chain_text=value_chain_text,
         facts=facts,
+        economist_system=make_economist_system_prompt(),
+        economist_user_prompt_builder=make_economist_user_prompt,
         analyst_system=build_analyst_system(),
         analyst_task=build_analyst_task(symbol, value_chain_text),
         valuer_system=make_valuer_system_prompt(),
@@ -121,6 +126,7 @@ def run(symbol: str) -> int:
     meta_path.write_text(
         f"symbol: {symbol}\n"
         f"started: {stamp}\n"
+        f"economist_model: {result.economist_model}\n"
         f"analyst_model: {result.analyst_model}\n"
         f"valuer_model: {result.valuer_model}\n"
         f"skeptic_model: {result.skeptic_model}\n"
@@ -128,11 +134,13 @@ def run(symbol: str) -> int:
         f"temperature: {settings.llm_temperature}\n"
         f"seed: {settings.llm_seed}\n"
         f"pre_gather_sec: {result.pre_gather_elapsed:.1f}\n"
+        f"economist_sec: {result.economist_elapsed:.1f}\n"
         f"analyst_sec: {result.analyst_elapsed:.1f}\n"
         f"valuer_sec: {result.valuer_elapsed:.1f}\n"
         f"skeptic_sec: {result.skeptic_elapsed:.1f}\n"
         f"steward_sec: {result.steward_elapsed:.1f}\n"
         f"total_sec: {result.total_elapsed + result.pre_gather_elapsed:.1f}\n"
+        f"economist_chars: {len(result.economist_text)}\n"
         f"analyst_chars: {len(result.analyst_text)}\n"
         f"valuer_chars: {len(result.valuer_text)}\n"
         f"skeptic_chars: {len(result.skeptic_text)}\n"

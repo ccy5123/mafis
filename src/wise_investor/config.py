@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # FMP retained for legacy/optional use only; prefer Finnhub going forward.
     finnhub_api_key: str = Field(default="", description="Finnhub API key (primary)")
     fmp_api_key: str = Field(default="", description="Financial Modeling Prep API key (legacy/optional)")
+    fred_api_key: str = Field(
+        default="", description="FRED API key (macro context for Economist agent)"
+    )
 
     ollama_host: str = Field(default="http://localhost:11434")
     analyst_model: str = Field(default="llama3.1:8b")

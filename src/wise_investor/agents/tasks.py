@@ -344,6 +344,71 @@ def make_skeptic_user_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Economist task template (Phase 2) — consumes FRED macro snapshot + vc brief
+# ---------------------------------------------------------------------------
+
+
+ECONOMIST_REPORT_TEMPLATE = """\
+You are producing the Economist (macro backdrop) section of the equity
+research note on {symbol}. This section MUST have these four H2 headings,
+in this order, with no other sections:
+
+## Rate Cycle
+One short paragraph describing the current Fed funds rate from the
+macro snapshot and classifying the cycle as EASING, HIKING, or
+HOLDING. Cite [Source: fred.FEDFUNDS] on the line with the rate.
+Add the 10-year Treasury yield and the 10-year breakeven inflation
+on a second line ending with
+[Source: fred.DGS10, fred.T10YIE].
+
+## Inflation
+One short paragraph: state the CPI YoY percent from the snapshot and
+frame it relative to the Fed's 2% target. Cite
+[Source: fred.CPIAUCSL] on the line with the YoY number.
+
+## Real Economy
+One short paragraph citing the latest Real GDP (level and YoY percent)
+and the Unemployment Rate. Every line with a number ends with
+[Source: fred.GDPC1] or [Source: fred.UNRATE] as appropriate.
+
+## FX and Geopolitical Backdrop
+Two subsections:
+- **KRW / USD**: one sentence stating the current rate from the
+  snapshot and framing whether a USD strengthening or weakening move
+  amplifies or compresses gains for a Korean investor holding
+  USD-denominated equities. End the sentence with
+  [Source: fred.DEXKOUS].
+- **Geopolitical risks relevant to the target**: two or three bullets
+  drawn ONLY from the value chain brief's "Geopolitical / regulatory"
+  and "Vulnerable links" subsections. Keep to risks with macro
+  character (sovereign / trade / currency), not firm-specific
+  platform defects. Each bullet cites
+  "per the value chain brief" with no tool citation needed.
+
+Do NOT write a summary, a bottom line, or stock-specific implications.
+Downstream agents read your output and draw their own conclusions.
+"""
+
+
+def make_economist_user_prompt(symbol: str, value_chain_text: str) -> str:
+    """Build the Economist's user-prompt content.
+
+    Only needs the value chain brief for qualitative geopolitical context.
+    The FRED macro snapshot is injected via the pre-gathered facts block.
+    """
+    symbol = symbol.upper()
+    return (
+        f"You are writing the Economist section of the research note on {symbol}. "
+        "Your numeric inputs are in <pre_gathered_tool_outputs> above. Your "
+        "qualitative geopolitical context is the value chain brief below.\n\n"
+        "<value_chain_brief>\n"
+        f"{value_chain_text}\n"
+        "</value_chain_brief>\n\n"
+        + ECONOMIST_REPORT_TEMPLATE.format(symbol=symbol)
+    )
+
+
+# ---------------------------------------------------------------------------
 # Steward task template (Phase 2) — consumes Analyst + Valuer + Skeptic
 # ---------------------------------------------------------------------------
 

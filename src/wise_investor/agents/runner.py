@@ -34,6 +34,11 @@ from wise_investor.config import settings
 FACTS_CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "facts_cache"
 from wise_investor.data.cross_validate import cross_validate_quote
 from wise_investor.data.finnhub import FinnhubClient as FMPClient  # alias for minimal call-site change
+from wise_investor.data.fred import (
+    FredError,
+    format_macro_snapshot,
+    get_macro_snapshot,
+)
 from wise_investor.tools.dcf import reverse_dcf as reverse_dcf_impl
 from wise_investor.tools.valuation import (
     calculate_ev_ebitda as calculate_ev_ebitda_impl,
@@ -613,6 +618,14 @@ def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
             lambda fld=fld: _exec_fetch_field({"field": fld, "symbol": symbol}),
         )
 
+    # Phase 2: FRED macro snapshot for the Economist agent. Gracefully
+    # degrades if the FRED key is missing — the Economist prompt handles
+    # the "N/A" case by saying snapshot unavailable.
+    facts["fred.macro_snapshot"] = _safe(
+        "fred.macro_snapshot",
+        lambda: format_macro_snapshot(get_macro_snapshot()),
+    )
+
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(
         json.dumps(facts, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -793,14 +806,18 @@ def _wrap_user_prompt_with_facts(
 
 @dataclass
 class CrewRunResult:
-    """Output of a full Analyst -> Valuer -> Skeptic -> Steward synthesis pipeline."""
+    """Output of the full 5-agent crew synthesis pipeline:
+    Economist -> Analyst -> Valuer -> Skeptic -> Steward.
+    """
 
     symbol: str
+    economist_text: str
     analyst_text: str
     valuer_text: str
     skeptic_text: str
     steward_text: str
     combined_markdown: str
+    economist_elapsed: float
     analyst_elapsed: float
     valuer_elapsed: float
     skeptic_elapsed: float
@@ -808,6 +825,7 @@ class CrewRunResult:
     pre_gather_elapsed: float
     total_elapsed: float
     facts_used: dict[str, str]
+    economist_model: str
     analyst_model: str
     valuer_model: str
     skeptic_model: str
@@ -818,6 +836,8 @@ def run_crew_synthesis(
     symbol: str,
     value_chain_text: str,
     facts: dict[str, str],
+    economist_system: str,
+    economist_user_prompt_builder: Callable[[str, str], str],
     analyst_system: str,
     analyst_task: str,
     valuer_system: str,
@@ -826,20 +846,23 @@ def run_crew_synthesis(
     skeptic_user_prompt_builder: Callable[[str, str, str, str], str],
     steward_system: str,
     steward_user_prompt_builder: Callable[[str, str, str, str, str], str],
+    economist_model_name: str | None = None,
     analyst_model_name: str | None = None,
     valuer_model_name: str | None = None,
     skeptic_model_name: str | None = None,
     steward_model_name: str | None = None,
     log_fn: Callable[[str], None] | None = None,
 ) -> CrewRunResult:
-    """Run the Phase 2 pipeline: Analyst → Valuer → Skeptic → Steward.
+    """Run the Phase 2 full pipeline:
+    Economist -> Analyst -> Valuer -> Skeptic -> Steward.
 
-    Model swap strategy: Analyst/Valuer share Qwen; keep_alive="0" after
-    Valuer so Skeptic's Llama can load. keep_alive="0" after Skeptic so
-    Steward's Qwen can load back (Skeptic != Steward model).
+    Model swap strategy: Economist/Analyst/Valuer share Qwen (no swap).
+    keep_alive="0" after Valuer so Skeptic's Llama can load. keep_alive="0"
+    after Skeptic so Steward's Qwen can load back.
     """
     log = log_fn or (lambda m: logger.info(m))
 
+    e_model = economist_model_name or settings.analyst_model  # Qwen default
     a_model = analyst_model_name or settings.analyst_model
     v_model = valuer_model_name or settings.valuer_model
     s_model = skeptic_model_name or settings.skeptic_model
@@ -847,9 +870,30 @@ def run_crew_synthesis(
 
     t_start = time.perf_counter()
 
-    # -- Analyst
+    # -- Economist (macro backdrop, reads value chain + macro snapshot)
+    log(f"[crew] Economist on {e_model}")
+    economist_task = economist_user_prompt_builder(symbol, value_chain_text)
+    economist_user = _wrap_user_prompt_with_facts(economist_task, facts)
+    economist_text, economist_elapsed = _run_synthesis_once(
+        system_prompt=economist_system,
+        user_prompt=economist_user,
+        model=e_model,
+        log_fn=log_fn,
+    )
+
+    # -- Analyst (reads Economist context via prepended macro section)
     log(f"[crew] Analyst on {a_model}")
-    analyst_user = _wrap_user_prompt_with_facts(analyst_task, facts)
+    analyst_task_with_macro = (
+        "The Economist has already written the macro-environment section "
+        "below. Reference it when it matters to your business or financial "
+        "analysis (e.g. 'per the Economist, the rate cycle is HOLDING'). "
+        "Do not repeat macro numbers the Economist already cited.\n\n"
+        "<economist_section>\n"
+        + economist_text
+        + "\n</economist_section>\n\n"
+        + analyst_task
+    )
+    analyst_user = _wrap_user_prompt_with_facts(analyst_task_with_macro, facts)
     analyst_text, analyst_elapsed = _run_synthesis_once(
         system_prompt=analyst_system,
         user_prompt=analyst_user,
@@ -904,10 +948,12 @@ def run_crew_synthesis(
 
     combined = _compose_combined_report(
         symbol=symbol,
+        economist_text=economist_text,
         analyst_text=analyst_text,
         valuer_text=valuer_text,
         skeptic_text=skeptic_text,
         steward_text=steward_text,
+        economist_model=e_model,
         analyst_model=a_model,
         valuer_model=v_model,
         skeptic_model=s_model,
@@ -916,11 +962,13 @@ def run_crew_synthesis(
 
     return CrewRunResult(
         symbol=symbol.upper(),
+        economist_text=economist_text,
         analyst_text=analyst_text,
         valuer_text=valuer_text,
         skeptic_text=skeptic_text,
         steward_text=steward_text,
         combined_markdown=combined,
+        economist_elapsed=economist_elapsed,
         analyst_elapsed=analyst_elapsed,
         valuer_elapsed=valuer_elapsed,
         skeptic_elapsed=skeptic_elapsed,
@@ -928,6 +976,7 @@ def run_crew_synthesis(
         pre_gather_elapsed=0.0,
         total_elapsed=total_elapsed,
         facts_used=facts,
+        economist_model=e_model,
         analyst_model=a_model,
         valuer_model=v_model,
         skeptic_model=s_model,
@@ -937,33 +986,39 @@ def run_crew_synthesis(
 
 def _compose_combined_report(
     symbol: str,
+    economist_text: str,
     analyst_text: str,
     valuer_text: str,
     skeptic_text: str,
     steward_text: str,
+    economist_model: str,
     analyst_model: str,
     valuer_model: str,
     skeptic_model: str,
     steward_model: str,
 ) -> str:
-    """Assemble the four agent outputs into a single markdown document."""
+    """Assemble the five agent outputs into a single markdown document."""
     header = (
-        f"# {symbol} — Equity Research Note (Phase 2 — Full Crew)\n\n"
-        "_Generated by the Wise Investor System: Analyst + Valuer + Skeptic + Steward._\n"
-        f"_Models: Analyst/{analyst_model} · Valuer/{valuer_model} · "
-        f"Skeptic/{skeptic_model} · Steward/{steward_model}_\n\n"
+        f"# {symbol} — Equity Research Note (Phase 2 — Full 5-Agent Crew)\n\n"
+        "_Generated by the Wise Investor System: "
+        "Economist + Analyst + Valuer + Skeptic + Steward._\n"
+        f"_Models: Economist/{economist_model} · Analyst/{analyst_model} · "
+        f"Valuer/{valuer_model} · Skeptic/{skeptic_model} · "
+        f"Steward/{steward_model}_\n\n"
         "---\n\n"
     )
     divider = "\n\n---\n\n"
     return (
         header
-        + f"# Part 1 · Analyst\n\n{analyst_text.strip()}"
+        + f"# Part 1 · Economist\n\n{economist_text.strip()}"
         + divider
-        + f"# Part 2 · Valuer\n\n{valuer_text.strip()}"
+        + f"# Part 2 · Analyst\n\n{analyst_text.strip()}"
         + divider
-        + f"# Part 3 · Skeptic\n\n{skeptic_text.strip()}"
+        + f"# Part 3 · Valuer\n\n{valuer_text.strip()}"
         + divider
-        + f"# Part 4 · Steward\n\n{steward_text.strip()}\n"
+        + f"# Part 4 · Skeptic\n\n{skeptic_text.strip()}"
+        + divider
+        + f"# Part 5 · Steward\n\n{steward_text.strip()}\n"
     )
 
 

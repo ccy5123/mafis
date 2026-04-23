@@ -408,14 +408,22 @@ def invention_audit(
         # Check match against every fact value. For small values, use
         # absolute tolerance of 0.01; for large, percent-based.
         matched = False
-        for fv in fact_values:
-            if fv == 0:
-                if abs(v) < 0.01:
+        # Build list of candidate target values to try — the token's
+        # normalized value PLUS its percent<->decimal equivalents. This
+        # covers facts stored as "3.64" that the report emits as "3.64%"
+        # (and the reverse).
+        candidates = [v, v * 100.0, v / 100.0]
+        for cand in candidates:
+            for fv in fact_values:
+                if fv == 0:
+                    if abs(cand) < 0.01:
+                        matched = True
+                        break
+                    continue
+                if abs(cand - fv) / abs(fv) * 100.0 <= tolerance_pct:
                     matched = True
                     break
-                continue
-            if abs(v - fv) / abs(fv) * 100.0 <= tolerance_pct:
-                matched = True
+            if matched:
                 break
         if not matched:
             # Second chance: small integers like "5", "10 years", "100" are
