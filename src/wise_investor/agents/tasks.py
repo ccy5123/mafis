@@ -48,19 +48,24 @@ from the calculate_per and calculate_ev_ebitda outputs.
 Five-to-ten-year durability analysis. Structural advantages (scale,
 ecosystem, switching cost, IP, regulatory) vs erosion forces. Then quote
 the peer multiples table verbatim inside a fenced code block, and below it
-write two short paragraphs: first interpreting the target's relative
-positioning versus peers, second naming the peer(s) that pose the most
-credible 5-year threat and why.
+write two short paragraphs (OUTSIDE the code block):
+1. Interpreting the target's relative positioning versus peers. EVERY
+   line in these paragraphs that mentions a specific peer PER or
+   EV/EBITDA number MUST end with [Source: get_peer_multiples].
+2. Naming the peer(s) that pose the most credible 5-year threat and
+   why. If you cite a number here, end the line with [Source: ...].
 
 ## 5. Valuation Context (brief)
-Two bullet lines only:
-- **Current multiples vs peers**: state the target's PER and EV/EBITDA with
-  [Source: ...] citations, then compare to the numerically highest and
-  lowest peer from the peer multiples table (name both peers and their
-  numbers). One sentence interpretation.
-- **Market-implied growth assumption**: quote the implied FCF growth rate
-  from reverse_dcf verbatim with [Source: reverse_dcf], then one sentence
-  comparing that rate to a plausible historical benchmark.
+Two bullet lines only. EACH LINE MUST end with a [Source: ...] citation
+listing every tool whose number is used on that line:
+- **Current multiples vs peers**: state the target's PER and EV/EBITDA,
+  then compare to the numerically highest and lowest peer from the peer
+  multiples table (name both peers and their numbers). One sentence
+  interpretation. End the line with
+  [Source: calculate_per, calculate_ev_ebitda, get_peer_multiples].
+- **Market-implied growth assumption**: quote the implied FCF growth
+  rate from reverse_dcf, then one sentence comparing it to a plausible
+  historical benchmark. End the line with [Source: reverse_dcf].
 
 Do NOT issue a buy/sell/hold recommendation — that is the Steward agent's
 responsibility in a later phase.
@@ -77,10 +82,13 @@ this exact format:
 
 If a tool_output says "Warnings: none" you may omit it from the bullet
 list. Do NOT paraphrase warnings; copy them character-for-character.
+If a warning contains a number (e.g. an implied growth rate), end that
+bullet with [Source: <tool_name>].
 
 **Known unknowns (from value chain brief):** Copy the bullet list under
 the "Known unknowns (do not pretend to know)" heading of the value chain
-brief verbatim into this subsection.
+brief verbatim into this subsection. These are qualitative — no numbers,
+no citations required.
 
 ## 7. Questions for Skeptic
 Exactly 5 questions, numbered 1 through 5. Each question MUST have these
@@ -89,6 +97,10 @@ three labeled fields in this order, each field one sentence:
 1. **Claim**: <the specific claim elsewhere in this report that is under attack>
    - **Assumption**: <the assumption the claim rests on>
    - **Evidence that would falsify it**: <concrete evidence or event that would refute it>
+
+If the **Claim** line contains any number, end that line with a
+[Source: <tool_name>] citation — the Universal Citation Rule applies
+here too.
 
 Preferred sources for claims to attack: the reverse-DCF implied growth
 rate, the premium multiple vs peers, and at least one vulnerable link
@@ -138,35 +150,45 @@ This section MUST have these three H2 headings, in this order, with no other
 sections:
 
 ## Valuation Snapshot
-Three short bullets, each with a tool-cited number:
-- **Current PER**: <value> vs peers (one sentence naming highest and lowest
-  peer with their numbers).
+Three short bullets. EVERY bullet MUST end with a [Source: ...] citation
+naming every tool whose number appears on that line:
+- **Current PER**: <value> vs peers (one sentence naming highest and
+  lowest peer with their numbers).
+  [Source: calculate_per, get_peer_multiples]
 - **Current EV/EBITDA**: <value> vs peers (same structure).
+  [Source: calculate_ev_ebitda, get_peer_multiples]
 - **Enterprise Value**: <value> — one sentence on what the Analyst's
-  financial-health picture (revenue scale, FCF, debt) implies about this EV.
+  financial-health picture (revenue scale, FCF, debt) implies about this
+  EV. End the line with [Source: calculate_ev_ebitda] plus any Analyst
+  sources whose numbers you paraphrase.
 
 ## Peer Context
 Quote the `get_peer_multiples` table VERBATIM inside a fenced code block
-(no edits, no summarization). Then write two short paragraphs:
+(no edits, no summarization). The fenced table itself does NOT need
+per-row citations. Then write two short paragraphs OUTSIDE the code
+block; every line in those paragraphs that contains a peer number MUST
+end with [Source: get_peer_multiples]:
 1. Where the target sits in the peer distribution (quartile position, by
    symbol name, no approximations).
 2. Which specific peer's multiple is the most informative benchmark for
-   this target, and why that peer matches best (similar business model,
-   customer overlap, etc. — ground in Analyst's moat / value-chain context
-   when you can).
+   this target, and why that peer matches best.
 
 ## Market-Implied Growth Assessment
-Three short paragraphs:
-1. Quote the reverse-DCF implied annual FCF growth rate verbatim with
+Three short paragraphs. EVERY line containing a numeric value MUST end
+with a [Source: ...] citation:
+1. Quote the reverse-DCF implied annual FCF growth rate
    [Source: reverse_dcf], and quote the three assumption parameters
-   (discount_rate, terminal_growth, high_growth_years) that produced it.
-2. Compare that implied rate to the target's historical growth trend. Use
-   only numbers present in <pre_gathered_tool_outputs> or in the Analyst's
-   text. If neither is available, say "historical comparison unavailable
-   from current tool outputs" — do not invent benchmarks.
-3. Surface all tool-output Warnings VERBATIM here. Any line starting with
-   "Warnings:" in a <tool_output> that is not "Warnings: none" must appear
-   character-for-character in this subsection, prefixed by the tool name.
+   (discount_rate, terminal_growth, high_growth_years) on the same line
+   or as a sub-bullet ending with [Source: reverse_dcf].
+2. Compare that implied rate to the target's historical growth trend.
+   Use only numbers present in <pre_gathered_tool_outputs> or in the
+   Analyst's text (cite the Analyst source accordingly). If neither is
+   available, say "historical comparison unavailable from current tool
+   outputs" — do not invent benchmarks.
+3. Surface all tool-output Warnings VERBATIM here. Any line starting
+   with "Warnings:" in a <tool_output> that is not "Warnings: none" must
+   appear character-for-character in this subsection, prefixed by the
+   tool name.
 
 Do NOT produce a buy/sell/hold recommendation. Do NOT write an overall
 valuation verdict like "overvalued" / "undervalued" / "fairly valued".
@@ -218,7 +240,10 @@ from the Analyst or Valuer section above. Each must follow this exact
 structure:
 
 1. **Target claim (Analyst|Valuer)**: <quote or close paraphrase of the
-   exact sentence you are attacking; name which agent stated it>.
+   exact sentence you are attacking; name which agent stated it>. If
+   this claim line contains a specific number (PER, growth rate, dollar
+   amount), end the line with [Source: <tool_name>] — the Universal
+   Citation Rule applies here too.
    - **Assumption under attack**: <the implicit assumption the claim rests on>.
    - **Counter-evidence / scenario**: <concrete, falsifiable event or
      measurement that would invalidate the claim; prefer items from the
