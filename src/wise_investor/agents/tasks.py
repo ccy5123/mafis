@@ -374,6 +374,121 @@ def make_skeptic_user_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Defender task template (Phase 2 debate round) — responds to Skeptic rebuttals
+# ---------------------------------------------------------------------------
+
+
+DEFENDER_REPORT_TEMPLATE = """\
+You are producing the Defender section of the equity research note on
+{symbol}. This section answers each of the Skeptic's 5 rebuttals, one
+at a time, with a DEFENDED or CONCEDED label. The Steward will copy
+your labels verbatim into the discipline matrix — so be rigorous.
+
+## Debate Round 3 — Bull Defender responses
+
+Exactly 5 responses, numbered 1 through 5. Each response MUST follow
+this structure:
+
+### Response to Skeptic #{{N}}
+**Skeptic's target claim (one-sentence quote):** <paraphrase the
+  specific rebuttal you are answering so the reader knows which
+  one this response addresses.>
+
+**Label (pick ONE):** DEFENDED or CONCEDED
+
+**Evidence / reasoning (one short paragraph):**
+  - If DEFENDED: name a concrete fact from <pre_gathered_tool_outputs>
+    (a `fetch.*` / `calculate_*` / `reverse_dcf` number, or an
+    `edgar.*` passage with its `[Source: 10-K <section>, filed
+    <YYYY-MM-DD>]` citation, or a specific point in the value chain
+    brief) and explain how it refutes the scenario. The evidence
+    MUST appear verbatim in the facts block or Analyst/Valuer
+    sections; no invented numbers.
+  - If CONCEDED: one sentence acknowledging the rebuttal stands,
+    plus one sentence naming what kind of evidence would have
+    refuted it (e.g. "a sustained 5-year FCF growth benchmark for
+    any semiconductor company above 20%/yr would refute this; none
+    is present in the facts block"). The concession MUST end with
+    the refusal phrase: "No concrete Bull counter-evidence available
+    in current facts."
+
+=== Speculative-defense ban ===
+
+A DEFENDED response is INVALID — and MUST be re-labelled CONCEDED —
+if its Evidence/reasoning paragraph relies on any of these phrases
+as the refuting argument:
+
+  - "could", "may", "might", "should", "would" (modal speculation)
+  - "is likely to", "is expected to", "is positioned to"
+  - "is working on", "is developing", "is building"
+  - "supports a higher [metric] than historical"
+  - "reducing the likelihood"
+  - "reasonable assumptions given the competitive edge"
+  - "the market already prices this in"
+  - vague appeals to "ecosystem", "moat", "brand" without a cited
+    number from the facts block
+
+If your first draft uses any of these as the anchor for DEFENDED,
+re-read the facts block. Find a number. If there is no number,
+CONCEDE. Concession with a named missing-evidence item is a
+stronger Bull move than a speculative defense.
+
+=== Citation requirement ===
+
+EVERY DEFENDED response's Evidence/reasoning paragraph MUST end with
+a `[Source: <tool_name>]` citation for the number it cites, OR a
+`[Source: 10-K <section>, filed <YYYY-MM-DD>]` citation for the
+edgar passage it quotes. A DEFENDED response with zero citations is
+automatically invalid — CONCEDE instead.
+
+## Closing tally
+
+After the 5 responses, write one line:
+
+**Tally:** X DEFENDED, Y CONCEDED (where X + Y = 5).
+
+This tally is what the Steward reads into the verdict matrix.
+
+Do NOT write a summary, conclusion, or recommendation. Do NOT rewrite
+the Skeptic's attacks — respond to them. Your output appends as Part 5
+of the combined report; the Steward follows as Part 6.
+"""
+
+
+def make_defender_user_prompt(
+    symbol: str,
+    analyst_output: str,
+    valuer_output: str,
+    skeptic_output: str,
+) -> str:
+    """Build the Defender's user-prompt content.
+
+    Gives the Defender the Bull thesis (Analyst + Valuer) and the 5
+    Skeptic rebuttals to respond to. The `<pre_gathered_tool_outputs>`
+    block is prepended by the shared runner wrapper.
+    """
+    symbol = symbol.upper()
+    return (
+        f"You are writing the Defender section of the research note on {symbol}.\n\n"
+        "The Analyst and Valuer produced the Bull thesis below. The Skeptic "
+        "then attacked it with 5 rebuttals. Your job is to respond to each "
+        "rebuttal with DEFENDED (backed by a concrete fact from the facts "
+        "pool) or CONCEDED (acknowledging the rebuttal stands). Read all "
+        "three sections carefully before drafting.\n\n"
+        "<analyst_section>\n"
+        f"{analyst_output}\n"
+        "</analyst_section>\n\n"
+        "<valuer_section>\n"
+        f"{valuer_output}\n"
+        "</valuer_section>\n\n"
+        "<skeptic_section>\n"
+        f"{skeptic_output}\n"
+        "</skeptic_section>\n\n"
+        + DEFENDER_REPORT_TEMPLATE.format(symbol=symbol)
+    )
+
+
+# ---------------------------------------------------------------------------
 # Economist task template (Phase 2) — consumes FRED macro snapshot + vc brief
 # ---------------------------------------------------------------------------
 
@@ -472,18 +587,24 @@ The FIRST paragraph must state the Bull thesis in one sentence and the
 Skeptic's strongest rebuttal in one sentence.
 
 The SECOND paragraph must, for each of the top-two Skeptic rebuttals,
-explicitly label it as either NEUTRALIZED or SURVIVED:
-  - NEUTRALIZED: cite a specific number or named fact from
-    <pre_gathered_tool_outputs> or from the Analyst/Valuer sections
-    that directly refutes the Skeptic's scenario. Speculative Bull
-    language ("could", "may", "should", "expected to", "is likely
-    to") is NOT a valid neutralization; mark any such rebuttal
-    SURVIVED.
-  - SURVIVED: restate the Skeptic's rebuttal in one sentence and
-    note "no concrete Bull counter-evidence in report".
+copy the Defender's label VERBATIM:
+  - **NEUTRALIZED** when the Defender labelled the corresponding
+    response **DEFENDED**. Quote the Defender's cited fact in one
+    sentence.
+  - **SURVIVED** when the Defender labelled the corresponding
+    response **CONCEDED**. Quote the Defender's concession (including
+    the "No concrete Bull counter-evidence available in current
+    facts" refusal phrase) in one sentence.
+
+You are NOT to relabel the Defender's decisions. The Defender already
+did the evidence work; your job is to translate DEFENDED → NEUTRALIZED
+and CONCEDED → SURVIVED for the matrix, not to second-guess. If you
+disagree with a Defender label, your only legitimate move is to leave
+it and let the discipline matrix + citation audit speak.
 
 Additional paragraphs may provide context, but the Verdict MUST follow
-directly from the SURVIVED/NEUTRALIZED labels:
+directly from the SURVIVED/NEUTRALIZED labels produced by this
+translation:
   - Both top-two rebuttals NEUTRALIZED → BUY allowed (C3-C5).
   - One NEUTRALIZED, one SURVIVED → HOLD (C1-C2) or PASS (C1).
   - Both SURVIVED → PASS (C1) by default, HOLD only if the Bull
@@ -529,20 +650,31 @@ def make_steward_user_prompt(
     analyst_output: str,
     valuer_output: str,
     skeptic_output: str,
+    defender_output: str = "",
 ) -> str:
     """Build the Steward's user-prompt content.
 
-    Gives the Steward the full three-agent research note plus the value
-    chain brief, so the final verdict can cite whichever section carries
-    the relevant evidence.
+    Gives the Steward the full four-agent debate (Analyst + Valuer +
+    Skeptic + Defender) plus the value chain brief. The Steward's job
+    is to translate the Defender's DEFENDED/CONCEDED labels into
+    NEUTRALIZED/SURVIVED for the verdict matrix — no independent
+    judgment.
     """
     symbol = symbol.upper()
+    defender_block = (
+        "<defender_section>\n"
+        f"{defender_output}\n"
+        "</defender_section>\n\n"
+        if defender_output
+        else ""
+    )
     return (
         f"You are writing the Steward section of the research note on {symbol}.\n\n"
-        "The Analyst, Valuer, and Skeptic have each completed their sections "
-        "above. Your job is to synthesize all three into a final verdict. "
-        "Read the Skeptic section especially carefully — your Rationale must "
-        "name which rebuttals survive and which are neutralized.\n\n"
+        "The Analyst, Valuer, Skeptic, and Defender have each completed their "
+        "sections. Your job is to translate the Defender's DEFENDED/CONCEDED "
+        "labels into NEUTRALIZED/SURVIVED for the verdict matrix — no "
+        "independent judgment. Read the Defender section especially "
+        "carefully.\n\n"
         "<analyst_section>\n"
         f"{analyst_output}\n"
         "</analyst_section>\n\n"
@@ -552,6 +684,7 @@ def make_steward_user_prompt(
         "<skeptic_section>\n"
         f"{skeptic_output}\n"
         "</skeptic_section>\n\n"
+        + defender_block +
         "For qualitative context (industry, customer concentration, "
         "geopolitical risks), refer to the value chain brief:\n\n"
         "<value_chain_brief>\n"

@@ -332,10 +332,16 @@ def audit_edgar_citations(
 
 
 def _extract_skeptic_section(text: str) -> str | None:
-    """Return the text of the `# Part 4 · Skeptic` section, or None if
-    the section boundary is not detected.
+    """Return the text of the `# Part N · Skeptic` section, or None if
+    not detected. Matches any Part number so this works for the
+    5-agent layout (Part 4) and the 6-agent debate layout (still Part 4
+    but with Defender as Part 5 and Steward as Part 6).
     """
-    m = re.search(r"^#\s*Part\s*4\s*·\s*Skeptic\s*$", text, re.IGNORECASE | re.MULTILINE)
+    m = re.search(
+        r"^#\s*Part\s*\d+\s*·\s*Skeptic\s*$",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
     if m is None:
         return None
     start = m.end()

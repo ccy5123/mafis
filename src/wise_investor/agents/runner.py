@@ -856,8 +856,8 @@ def _wrap_user_prompt_with_facts(
 
 @dataclass
 class CrewRunResult:
-    """Output of the full 5-agent crew synthesis pipeline:
-    Economist -> Analyst -> Valuer -> Skeptic -> Steward.
+    """Output of the full 6-agent crew synthesis pipeline (Phase 2 debate):
+    Economist -> Analyst -> Valuer -> Skeptic -> Defender -> Steward.
     """
 
     symbol: str
@@ -880,6 +880,11 @@ class CrewRunResult:
     valuer_model: str
     skeptic_model: str
     steward_model: str
+    # Phase 2 debate round — optional for backwards compat with any test
+    # or script that instantiates CrewRunResult without the defender.
+    defender_text: str = ""
+    defender_elapsed: float = 0.0
+    defender_model: str = ""
 
 
 def run_crew_synthesis(
@@ -895,20 +900,29 @@ def run_crew_synthesis(
     skeptic_system: str,
     skeptic_user_prompt_builder: Callable[[str, str, str, str], str],
     steward_system: str,
-    steward_user_prompt_builder: Callable[[str, str, str, str, str], str],
+    steward_user_prompt_builder: Callable[..., str],
+    defender_system: str | None = None,
+    defender_user_prompt_builder: Callable[[str, str, str, str], str] | None = None,
     economist_model_name: str | None = None,
     analyst_model_name: str | None = None,
     valuer_model_name: str | None = None,
     skeptic_model_name: str | None = None,
     steward_model_name: str | None = None,
+    defender_model_name: str | None = None,
     log_fn: Callable[[str], None] | None = None,
 ) -> CrewRunResult:
     """Run the Phase 2 full pipeline:
-    Economist -> Analyst -> Valuer -> Skeptic -> Steward.
+    Economist -> Analyst -> Valuer -> Skeptic -> Defender -> Steward.
 
-    Model swap strategy: Economist/Analyst/Valuer share Qwen (no swap).
-    keep_alive="0" after Valuer so Skeptic's Llama can load. keep_alive="0"
-    after Skeptic so Steward's Qwen can load back.
+    Debate structure: Skeptic produces 5 attacks. Defender (optional,
+    skipped if defender_system is None) responds DEFENDED/CONCEDED to
+    each. Steward translates Defender labels into NEUTRALIZED/SURVIVED
+    for the discipline matrix — no independent judgment.
+
+    Model swap strategy: Economist/Analyst/Valuer/Defender share Qwen
+    (no swap). keep_alive="0" after Valuer so Skeptic's Llama can load.
+    keep_alive="0" after Skeptic so Qwen can load back for Defender +
+    Steward.
     """
     log = log_fn or (lambda m: logger.info(m))
 
@@ -917,6 +931,7 @@ def run_crew_synthesis(
     v_model = valuer_model_name or settings.valuer_model
     s_model = skeptic_model_name or settings.skeptic_model
     st_model = steward_model_name or settings.steward_model
+    d_model = defender_model_name or settings.analyst_model  # share with Analyst
 
     t_start = time.perf_counter()
 
@@ -970,9 +985,10 @@ def run_crew_synthesis(
         symbol, value_chain_text, analyst_text, valuer_text
     )
     skeptic_user = _wrap_user_prompt_with_facts(skeptic_task, facts, is_skeptic=True)
-    # Unload Skeptic model if Steward runs on a different model (typical:
-    # Skeptic=Llama, Steward=Qwen — swap back).
-    skeptic_unload = "0" if st_model != s_model else None
+    # Unload Skeptic model if the next stage (Defender or Steward) runs on
+    # a different model (typical: Skeptic=Llama, Defender/Steward=Qwen).
+    next_after_skeptic = d_model if defender_system else st_model
+    skeptic_unload = "0" if next_after_skeptic != s_model else None
     skeptic_text, skeptic_elapsed = _run_synthesis_once(
         system_prompt=skeptic_system,
         user_prompt=skeptic_user,
@@ -981,10 +997,34 @@ def run_crew_synthesis(
         log_fn=log_fn,
     )
 
-    # -- Steward (reads Analyst + Valuer + Skeptic)
+    # -- Defender (optional Phase 2 debate round; reads Analyst + Valuer + Skeptic)
+    defender_text = ""
+    defender_elapsed = 0.0
+    if defender_system and defender_user_prompt_builder:
+        log(f"[crew] Defender on {d_model}")
+        defender_task = defender_user_prompt_builder(
+            symbol, analyst_text, valuer_text, skeptic_text
+        )
+        defender_user = _wrap_user_prompt_with_facts(defender_task, facts)
+        # Unload Defender model if Steward runs on a different model.
+        defender_unload = "0" if st_model != d_model else None
+        defender_text, defender_elapsed = _run_synthesis_once(
+            system_prompt=defender_system,
+            user_prompt=defender_user,
+            model=d_model,
+            keep_alive=defender_unload,
+            log_fn=log_fn,
+        )
+
+    # -- Steward (reads Analyst + Valuer + Skeptic + Defender)
     log(f"[crew] Steward on {st_model}")
     steward_task = steward_user_prompt_builder(
-        symbol, value_chain_text, analyst_text, valuer_text, skeptic_text
+        symbol,
+        value_chain_text,
+        analyst_text,
+        valuer_text,
+        skeptic_text,
+        defender_text,
     )
     steward_user = _wrap_user_prompt_with_facts(steward_task, facts)
     steward_text, steward_elapsed = _run_synthesis_once(
@@ -1052,11 +1092,13 @@ def run_crew_synthesis(
         analyst_text=analyst_text,
         valuer_text=valuer_text,
         skeptic_text=skeptic_text,
+        defender_text=defender_text,
         steward_text=steward_text,
         economist_model=e_model,
         analyst_model=a_model,
         valuer_model=v_model,
         skeptic_model=s_model,
+        defender_model=d_model if defender_text else "",
         steward_model=st_model,
     )
     # Append citation audit section (only if violations were found).
@@ -1069,12 +1111,14 @@ def run_crew_synthesis(
         analyst_text=analyst_text,
         valuer_text=valuer_text,
         skeptic_text=skeptic_text,
+        defender_text=defender_text,
         steward_text=steward_text,
         combined_markdown=combined,
         economist_elapsed=economist_elapsed,
         analyst_elapsed=analyst_elapsed,
         valuer_elapsed=valuer_elapsed,
         skeptic_elapsed=skeptic_elapsed,
+        defender_elapsed=defender_elapsed,
         steward_elapsed=steward_elapsed,
         pre_gather_elapsed=0.0,
         total_elapsed=total_elapsed,
@@ -1083,6 +1127,7 @@ def run_crew_synthesis(
         analyst_model=a_model,
         valuer_model=v_model,
         skeptic_model=s_model,
+        defender_model=d_model if defender_text else "",
         steward_model=st_model,
     )
 
@@ -1099,30 +1144,52 @@ def _compose_combined_report(
     valuer_model: str,
     skeptic_model: str,
     steward_model: str,
+    defender_text: str = "",
+    defender_model: str = "",
 ) -> str:
-    """Assemble the five agent outputs into a single markdown document."""
-    header = (
-        f"# {symbol} — Equity Research Note (Phase 2 — Full 5-Agent Crew)\n\n"
-        "_Generated by the Wise Investor System: "
-        "Economist + Analyst + Valuer + Skeptic + Steward._\n"
+    """Assemble the five-or-six agent outputs into a single markdown document.
+
+    The Defender stage is optional for backwards compat with pre-Phase-2
+    test runs; when present, Steward becomes Part 6 and the report
+    title says "Full 6-Agent Crew" instead of 5.
+    """
+    has_defender = bool(defender_text)
+    agent_count = 6 if has_defender else 5
+    roster = (
+        "Economist + Analyst + Valuer + Skeptic + Defender + Steward"
+        if has_defender
+        else "Economist + Analyst + Valuer + Skeptic + Steward"
+    )
+    model_line = (
         f"_Models: Economist/{economist_model} · Analyst/{analyst_model} · "
         f"Valuer/{valuer_model} · Skeptic/{skeptic_model} · "
-        f"Steward/{steward_model}_\n\n"
-        "---\n\n"
+    )
+    if has_defender:
+        model_line += f"Defender/{defender_model} · "
+    model_line += f"Steward/{steward_model}_\n\n"
+
+    header = (
+        f"# {symbol} — Equity Research Note (Phase 2 — Full {agent_count}-Agent Crew)\n\n"
+        f"_Generated by the Wise Investor System: {roster}._\n"
+        + model_line
+        + "---\n\n"
     )
     divider = "\n\n---\n\n"
-    return (
-        header
-        + f"# Part 1 · Economist\n\n{economist_text.strip()}"
+    body = (
+        f"# Part 1 · Economist\n\n{economist_text.strip()}"
         + divider
         + f"# Part 2 · Analyst\n\n{analyst_text.strip()}"
         + divider
         + f"# Part 3 · Valuer\n\n{valuer_text.strip()}"
         + divider
         + f"# Part 4 · Skeptic\n\n{skeptic_text.strip()}"
-        + divider
-        + f"# Part 5 · Steward\n\n{steward_text.strip()}\n"
     )
+    if has_defender:
+        body += divider + f"# Part 5 · Defender\n\n{defender_text.strip()}"
+        body += divider + f"# Part 6 · Steward\n\n{steward_text.strip()}\n"
+    else:
+        body += divider + f"# Part 5 · Steward\n\n{steward_text.strip()}\n"
+    return header + body
 
 
 # ---------------------------------------------------------------------------
