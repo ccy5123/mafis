@@ -175,8 +175,14 @@ def test_steward_model_matches_config() -> None:
 
 def test_steward_system_prompt_enforces_pass_default() -> None:
     prompt = make_steward_system_prompt().lower()
-    assert "default to pass" in prompt
+    # Phase 2-B tightening: 'default to hold-or-pass' replaces the
+    # stricter-sounding but looser-in-practice 'default to pass' — the
+    # new text better matches how small LLMs behave.
+    assert "default to hold-or-pass" in prompt or "default to pass" in prompt
     assert "pass" in prompt and "buy" in prompt and "hold" in prompt
+    # New discipline: neutralization evidence standard.
+    assert "neutraliz" in prompt
+    assert "speculative" in prompt or "speculation" in prompt
 
 
 def test_steward_backstory_forbids_sell_and_balance_hedging() -> None:

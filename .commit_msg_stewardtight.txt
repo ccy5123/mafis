@@ -1,0 +1,52 @@
+feat: Phase 2-B Steward discipline tightening (HOLD default, labeled rebuttals)
+
+Post-NVDA 4/5-agent runs showed the Steward would accept speculative Bull
+language ("AI leadership could support continued innovation") as evidence
+of rebuttal neutralization and produce BUY verdicts too easily. This
+commit tightens the discipline in two places:
+
+steward.py backstory
+- DEFAULT TO HOLD-OR-PASS (replaces 'DEFAULT TO PASS' — the old phrase
+  described intent but small LLMs still drifted toward BUY).
+- NEUTRALIZATION EVIDENCE STANDARD: a rebuttal counts as neutralized
+  only when a concrete number or named fact refutes it. Speculative
+  Bull language ('could', 'may', 'should', 'expected to', 'is likely
+  to') is explicitly called out as non-neutralization.
+- Conviction ceiling: if any top-two rebuttal stays SURVIVED, the
+  verdict ceiling is HOLD Conviction 2. BUY C3-C5 requires both top-
+  two rebuttals to be genuinely neutralized by evidence.
+
+tasks.py STEWARD_REPORT_TEMPLATE Rationale section
+- Rationale now REQUIRES an explicit NEUTRALIZED or SURVIVED label on
+  each of the top-two Skeptic rebuttals.
+- Verdict mapping is made deterministic:
+    both NEUTRALIZED  -> BUY allowed (C3-C5)
+    one/one           -> HOLD (C1-C2) or PASS (C1)
+    both SURVIVED     -> PASS (C1), HOLD only with independent evidence
+- SURVIVED rebuttals must be restated with the phrase 'no concrete
+  Bull counter-evidence in report' to force the LLM to face the gap.
+
+Validation on GEV 5-agent run (reports/GEV_20260423_1112.crew.md)
+- NVDA under old discipline: BUY Conviction 4, 3-5% position.
+- GEV under new discipline: HOLD Conviction 2, 'No addition at current
+  price; existing position retained.'
+- Steward now explicitly labels rebuttals NEUTRALIZED or SURVIVED in
+  the Rationale, with honest phrases like 'no specific evidence is
+  provided to show that these issues will not be resolved.'
+- Verdict difference tracks the underlying fact pattern: GEV at
+  PER 63.74 / EV/EBITDA 128.97 with 27.04% implied FCF growth carries
+  two unrebutted Skeptic concerns (Broadcom/Siemens competitive threat,
+  Haliade-X platform defect risk) -> HOLD. The tightened discipline
+  is producing the conservative verdicts design-v2.2 §7.5 calls for.
+
+Quality metrics on GEV 5-agent: 5 of 6 pass. citation_rate (0.51)
+remains the familiar Llama-Skeptic residual. invention_audit holds at
+1 after the percent<->decimal fallback introduced in the Economist
+commit.
+
+Tests: test_steward_system_prompt_enforces_pass_default updated to
+match new 'default to hold-or-pass' wording and to assert that the
+neutralization/speculative language is present. All 108 non-skipped
+tests pass.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

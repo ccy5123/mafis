@@ -429,13 +429,33 @@ An integer 1-5, on its own line, as "**Conviction: N**". BUY may carry
 this specific conviction number rather than one higher or lower.
 
 ## Rationale
-Two to four short paragraphs. The FIRST paragraph must state the Bull
-thesis in one sentence and the Skeptic's strongest surviving rebuttal in
-one sentence. The remaining paragraph(s) explain why the Bull thesis
-does or does not survive the rebuttals. Every numeric value MUST end
-with [Source: <agent_or_tool>] — cite Analyst, Valuer, Skeptic, or a
-specific tool name from pre_gathered_tool_outputs. Do not introduce
-numbers that do not already appear earlier in the report.
+Two to four short paragraphs.
+
+The FIRST paragraph must state the Bull thesis in one sentence and the
+Skeptic's strongest rebuttal in one sentence.
+
+The SECOND paragraph must, for each of the top-two Skeptic rebuttals,
+explicitly label it as either NEUTRALIZED or SURVIVED:
+  - NEUTRALIZED: cite a specific number or named fact from
+    <pre_gathered_tool_outputs> or from the Analyst/Valuer sections
+    that directly refutes the Skeptic's scenario. Speculative Bull
+    language ("could", "may", "should", "expected to", "is likely
+    to") is NOT a valid neutralization; mark any such rebuttal
+    SURVIVED.
+  - SURVIVED: restate the Skeptic's rebuttal in one sentence and
+    note "no concrete Bull counter-evidence in report".
+
+Additional paragraphs may provide context, but the Verdict MUST follow
+directly from the SURVIVED/NEUTRALIZED labels:
+  - Both top-two rebuttals NEUTRALIZED → BUY allowed (C3-C5).
+  - One NEUTRALIZED, one SURVIVED → HOLD (C1-C2) or PASS (C1).
+  - Both SURVIVED → PASS (C1) by default, HOLD only if the Bull
+    thesis has independent evidence the Skeptic did not attack.
+
+Every numeric value MUST end with [Source: <agent_or_tool>] — cite
+Analyst, Valuer, Skeptic, or a specific tool name from
+pre_gathered_tool_outputs. Do not introduce numbers that do not
+already appear earlier in the report.
 
 ## Position Sizing Guidance
 If Verdict is BUY: suggest a position-size band as a percent of portfolio
