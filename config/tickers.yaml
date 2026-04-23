@@ -1,0 +1,63 @@
+# 3-Tier ticker registry (design-v2.2 §6).
+#
+# Tier 1: core held / priority-research positions. Receives the full
+#         5-agent crew (Economist + Analyst + Valuer + Skeptic + Steward).
+#         ~15 min per ticker. Keep to 3-5 entries so a daily sweep fits
+#         in a reasonable window. Every Tier 1 ticker MUST have a
+#         hand-written value chain brief at docs/value_chains/<SYMBOL>.md.
+#
+# Tier 2: watch list + value-chain-adjacent names. Receives a Python-only
+#         pre-gather pass (no LLM work). Facts land in data/facts_cache/
+#         so the cache is warm if the ticker is promoted to Tier 1.
+#         A future release will add change-detection against the prior
+#         day's cache to flag material shifts. Up to ~20 entries.
+#
+# Tier 3: passive watch list. Not fetched; the ticker is just registered
+#         so that when filters fire elsewhere (news, peer graph, value-
+#         chain events) we can associate hits with it. Up to ~100 entries.
+#
+# notes are optional one-liners for human reference and are never passed
+# to an LLM.
+
+tier_1:
+  - symbol: NVDA
+    notes: "AI accelerator leadership; 20% implied FCF growth as Skeptic target"
+  - symbol: GEV
+    notes: "Energy equipment (gas turbine + wind + grid); AI-capex tailwind"
+
+tier_2:
+  - symbol: AAPL
+    notes: "Phase 1A smoke-test ticker; solid reference point"
+  - symbol: MSFT
+    notes: "Hyperscaler; upstream NVDA customer"
+  - symbol: GOOGL
+    notes: "Hyperscaler; TPU substitute threat to NVDA"
+  - symbol: AMD
+    notes: "NVDA direct competitor in data-center GPUs"
+  - symbol: TSM
+    notes: "TSMC ADR; upstream NVDA single-point dependency"
+
+tier_3:
+  # Upstream / component supply
+  - symbol: AVGO
+    notes: "Custom ASIC supplier to Google/Meta"
+  - symbol: MU
+    notes: "Memory (HBM secondary)"
+  - symbol: ASML
+    notes: "Lithography (indirect NVDA dependency)"
+  # Hyperscalers and downstream
+  - symbol: META
+    notes: "Hyperscaler; MTIA internal silicon"
+  - symbol: AMZN
+    notes: "AWS hyperscaler; Trainium/Inferentia internal"
+  - symbol: ORCL
+    notes: "Oracle Cloud hyperscaler"
+  # Energy-adjacent for GEV
+  - symbol: ETN
+    notes: "GEV peer override — electrification"
+  - symbol: ABBNY
+    notes: "GEV peer override — automation + electrification"
+  - symbol: VWDRY
+    notes: "GEV peer override — wind pure-play"
+  - symbol: SMNEY
+    notes: "GEV peer override — Siemens Energy"
