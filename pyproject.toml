@@ -24,6 +24,7 @@ dependencies = [
     # Utilities
     "rich>=13.7.0",
     "pyyaml>=6.0",
+    "networkx>=3.2",
 ]
 
 [project.optional-dependencies]
