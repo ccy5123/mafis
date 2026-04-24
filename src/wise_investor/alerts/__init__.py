@@ -24,9 +24,17 @@ from wise_investor.alerts.chain_alerts import (
     find_target_paths,
     scan_for_alerts,
 )
+from wise_investor.alerts.ledger import (
+    DEFAULT_COOLDOWN_HOURS,
+    AlertLedger,
+    AlertRecord,
+)
 
 __all__ = [
+    "AlertLedger",
+    "AlertRecord",
     "ChainAlert",
+    "DEFAULT_COOLDOWN_HOURS",
     "NewsItemLike",
     "compose_alert_markdown",
     "find_matching_nodes",

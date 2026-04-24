@@ -121,11 +121,34 @@ def run(args: argparse.Namespace) -> int:
     console.print(f"Collected [cyan]{len(news)}[/cyan] unique news items")
 
     alerts = scan_for_alerts(graph, news, max_hops=args.hops)
-    console.print(f"Emitted [cyan]{len(alerts)}[/cyan] alert(s)")
+    console.print(f"Raw alerts: [cyan]{len(alerts)}[/cyan]")
+
+    # Dedup against the persistent ledger so cron-style runs don't
+    # spam the same (target, node, title) every hour.
+    suppressed = 0
+    ledger = None
+    if args.dedup:
+        from wise_investor.alerts.ledger import AlertLedger
+
+        ledger = AlertLedger()
+        filtered = ledger.filter_new(alerts, cooldown_hours=args.cooldown_hours)
+        suppressed = len(alerts) - len(filtered)
+        alerts = filtered
+        console.print(
+            f"Dedup: [yellow]{suppressed} suppressed[/yellow] "
+            f"(cooldown {args.cooldown_hours}h), "
+            f"[cyan]{len(alerts)} new[/cyan]"
+        )
 
     md = compose_alert_markdown(alerts)
     console.print()
     console.print(Markdown(md))
+
+    # Only record AFTER we've decided to show/send the alert —
+    # a dry-run without --telegram still "shows" to the user so
+    # it counts.
+    if ledger is not None and alerts:
+        ledger.record(alerts)
 
     if args.telegram and alerts:
         try:
@@ -172,6 +195,21 @@ def main() -> int:
         "--output",
         default=None,
         help="Optional path to save the alert markdown (e.g. reports/chain_alerts_YYYYMMDD.md)",
+    )
+    parser.add_argument(
+        "--dedup",
+        action="store_true",
+        help=(
+            "Filter alerts against the SQLite ledger; alerts already sent "
+            "within --cooldown-hours are suppressed. Strongly recommended "
+            "for cron use to avoid Telegram spam."
+        ),
+    )
+    parser.add_argument(
+        "--cooldown-hours",
+        type=float,
+        default=48.0,
+        help="Cooldown window for --dedup (default 48h)",
     )
     args = parser.parse_args()
     return run(args)
