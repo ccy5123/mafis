@@ -80,25 +80,19 @@ def _build_backend(name: str) -> LLMBackend:
         return OllamaBackend()
 
     if name == "openai_compat":
-        # Phase 3 lands this backend — Phase 2 leaves a clear message
-        # so smoke tests fail in an obvious way if someone points at
-        # it too early.
-        raise NotImplementedError(
-            "openai_compat backend is scheduled for Phase 3. "
-            "Remove LLM_BACKEND from your .env or set it to 'ollama'."
-        )
+        from wise_investor.llm.backends.openai_compat import OpenAICompatBackend
+
+        return OpenAICompatBackend()
 
     if name == "mlx":
-        raise NotImplementedError(
-            "mlx backend is scheduled for Phase 3. "
-            "Remove LLM_BACKEND from your .env or set it to 'ollama'."
-        )
+        from wise_investor.llm.backends.mlx import MLXBackend
+
+        return MLXBackend()
 
     if name == "llamacpp":
-        raise NotImplementedError(
-            "llamacpp backend is scheduled for Phase 3. "
-            "Remove LLM_BACKEND from your .env or set it to 'ollama'."
-        )
+        from wise_investor.llm.backends.llamacpp import LlamaCppBackend
+
+        return LlamaCppBackend()
 
     raise ValueError(f"Unreachable: {name!r} passed SUPPORTED_BACKENDS check")
 

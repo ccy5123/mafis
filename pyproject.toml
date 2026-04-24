@@ -37,6 +37,27 @@ dev = [
     "mypy>=1.11.0",
 ]
 
+# Apple Silicon only. `pip install` fails on other platforms — this is
+# intentional; see docs/llm_backends.md for the fallback (MLX via
+# mlx_lm.server + openai_compat backend).
+mlx = [
+    "mlx-lm>=0.20",
+]
+
+# llama.cpp via llama-cpp-python. Default install is CPU-only; set
+#   CMAKE_ARGS="-DLLAMA_CUDA=on"    (NVIDIA)
+#   CMAKE_ARGS="-DLLAMA_METAL=on"   (Apple)
+# before `pip install` to build a GPU-accelerated wheel.
+llamacpp = [
+    "llama-cpp-python>=0.2.90",
+]
+
+# Convenience bundle — everything optional in one extra.
+all-backends = [
+    "mlx-lm>=0.20; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "llama-cpp-python>=0.2.90",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
