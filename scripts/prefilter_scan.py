@@ -168,6 +168,33 @@ def run(args: argparse.Namespace) -> int:
         if combined:
             sample_hits[sym] = combined
 
+    # Stage 3: optional semantic relevance filter. The LLM reads each
+    # hit's (ticker, headline) pair and keeps only material ones.
+    if args.semantic and all_hits:
+        from wise_investor.filters.semantic import (
+            filter_hits_semantically,
+            materials_only,
+        )
+
+        console.print(
+            f"Running Stage 3 semantic filter on "
+            f"[cyan]{len(all_hits)}[/cyan] hit(s) (max {args.semantic_max})..."
+        )
+        decisions = filter_hits_semantically(
+            all_hits, max_hits=args.semantic_max
+        )
+        kept = materials_only(decisions)
+        dropped = len(all_hits) - len(kept)
+        console.print(
+            f"Semantic filter: [cyan]{len(kept)} kept[/cyan], "
+            f"[yellow]{dropped} dropped[/yellow]"
+        )
+        all_hits = kept
+        # Rebuild sample_hits off the kept list.
+        sample_hits = {}
+        for h in all_hits:
+            sample_hits.setdefault(h.symbol, []).append(h)
+
     scores = aggregate_scores(all_hits)
     if not scores:
         console.print("[dim]No pre-filter hits in this news batch.[/dim]")
@@ -247,6 +274,21 @@ def main() -> int:
         "--output",
         default=None,
         help="Optional markdown file path for the scan summary",
+    )
+    parser.add_argument(
+        "--semantic",
+        action="store_true",
+        help=(
+            "Run Stage 3 semantic filter via Qwen 2.5 7B on the keyword / "
+            "graph-context hits to drop immaterial mentions. Adds ~3s "
+            "per hit; use --semantic-max to cap."
+        ),
+    )
+    parser.add_argument(
+        "--semantic-max",
+        type=int,
+        default=20,
+        help="Cap on Stage 3 LLM calls to bound cost (default 20)",
     )
     args = parser.parse_args()
     return run(args)
