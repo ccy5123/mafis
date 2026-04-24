@@ -138,6 +138,61 @@ class TelegramNotifier:
         return True
 
 
+    def send_document(
+        self,
+        path: str,
+        caption: str | None = None,
+        parse_mode: Literal["MarkdownV2", "Markdown", "HTML"] | None = None,
+    ) -> bool:
+        """Upload a file via sendDocument so mobile clients can open it
+        with a single tap (filesystem paths are unclickable on mobile).
+
+        Returns True on HTTP 200, False on skip / failure. Never raises.
+
+        Telegram's sendDocument accepts files up to 50 MB — well above
+        any crew report (typical ~20 KB). We do NOT chunk the file;
+        if it ever exceeds the limit the API returns 413 and we log
+        the failure.
+        """
+        import pathlib
+
+        if not self.configured:
+            logger.debug(
+                "Telegram not configured; skipping document push (%s)", path
+            )
+            return False
+
+        file_path = pathlib.Path(path)
+        if not file_path.exists():
+            logger.warning("Telegram send_document: file not found %s", path)
+            return False
+
+        url = f"{self.BASE_URL}/bot{self.bot_token}/sendDocument"
+        data: dict[str, str] = {"chat_id": str(self.chat_id)}
+        if caption is not None:
+            # Captions are limited to 1024 chars by Telegram.
+            data["caption"] = caption[:1024]
+            if parse_mode is not None:
+                data["parse_mode"] = parse_mode
+
+        try:
+            with open(file_path, "rb") as f:
+                files = {"document": (file_path.name, f, "text/markdown")}
+                r = httpx.post(url, data=data, files=files, timeout=self.timeout)
+        except Exception as e:
+            logger.warning("Telegram send_document failed: %s", e)
+            return False
+
+        if r.status_code >= 400:
+            logger.warning(
+                "Telegram API %d on sendDocument: %s",
+                r.status_code,
+                r.text[:200],
+            )
+            return False
+        return True
+
+
 def push_if_configured(text: str) -> bool:
     """Convenience: one-shot push using default env settings."""
     return TelegramNotifier().send(text)

@@ -221,12 +221,25 @@ def run(symbol: str) -> int:
     notifier = TelegramNotifier()
     if notifier.configured:
         summary = extract_verdict_summary(symbol, result.combined_markdown)
-        korean = format_korean_summary(summary, report_path=str(report_path))
+        korean = format_korean_summary(summary)
         sent = notifier.send(korean)
         if sent:
             console.print("[cyan]📨 Telegram summary pushed[/cyan]")
         else:
             console.print("[yellow]Telegram push failed — see logs[/yellow]")
+
+        # Follow up with the full .md report as a document attachment
+        # so the user can open it with a single tap on mobile (paths
+        # pasted into a message body are not clickable on mobile
+        # Telegram clients).
+        doc_caption = f"📄 {symbol} 전체 리포트"
+        doc_sent = notifier.send_document(str(report_path), caption=doc_caption)
+        if doc_sent:
+            console.print("[cyan]📎 Telegram document pushed[/cyan]")
+        else:
+            console.print(
+                "[yellow]Telegram document push failed — see logs[/yellow]"
+            )
     return 0
 
 

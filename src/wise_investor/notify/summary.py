@@ -26,7 +26,7 @@ class VerdictSummary:
     """Parsed Steward outcome for push-notification rendering."""
 
     symbol: str
-    verdict: str | None  # BUY / HOLD / PASS
+    verdict: str | None  # BUY / HOLD / PASS (audit-corrected when violation)
     conviction: int | None
     position_sizing: str | None
     bull_thesis: str | None
@@ -34,6 +34,11 @@ class VerdictSummary:
     has_economist: bool
     has_skeptic: bool
     has_steward: bool
+    # Audit flags — populated when the Python discipline audit
+    # corrected the Steward's original verdict.
+    audit_downgraded: bool = False
+    original_verdict: str | None = None
+    original_conviction: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +117,26 @@ def _extract_position_sizing(steward_section: str) -> str | None:
     return collapsed[:140]
 
 
+def _truncate_at_sentence(text: str, soft_max: int = 320, hard_max: int = 400) -> str:
+    """Clip `text` at a sentence boundary near `soft_max`.
+
+    Walks forward from soft_max looking for the first sentence terminator
+    (period / question / exclamation followed by space or end). Falls back
+    to a hard cut at `hard_max` if no boundary is found in the window —
+    appending "..." so the reader sees the truncation was intentional.
+    """
+    if len(text) <= soft_max:
+        return text
+    # Look for a sentence terminator between soft_max and hard_max.
+    for i in range(soft_max, min(hard_max, len(text))):
+        ch = text[i]
+        if ch in ".!?" and (i + 1 == len(text) or text[i + 1] in " \n\t"):
+            return text[: i + 1]
+    # Nothing found — hard cut + ellipsis so the truncation is visible.
+    cut = min(hard_max, len(text))
+    return text[:cut].rstrip() + "…"
+
+
 def _extract_rationale_first_paragraph(steward_section: str) -> str | None:
     """Pull the first paragraph of the Rationale block."""
     m = re.search(
@@ -122,8 +147,8 @@ def _extract_rationale_first_paragraph(steward_section: str) -> str | None:
     if not m:
         return None
     para = m.group(1).strip()
-    # Trim to something pushable on Telegram.
-    return " ".join(para.split())[:320]
+    # Trim to something pushable on Telegram, but at sentence boundary.
+    return _truncate_at_sentence(" ".join(para.split()))
 
 
 def _split_bull_vs_skeptic(rationale_first: str | None) -> tuple[str | None, str | None]:
@@ -149,15 +174,49 @@ def _split_bull_vs_skeptic(rationale_first: str | None) -> tuple[str | None, str
 
 
 def extract_verdict_summary(symbol: str, report: str) -> VerdictSummary:
-    """Parse a combined crew report into a VerdictSummary."""
+    """Parse a combined crew report into a VerdictSummary.
+
+    Verdict + conviction are taken from the Python discipline audit
+    (audit_steward_section) when it detects a violation, NOT from the
+    Steward LLM's own text. This keeps Telegram push, paper-trades
+    ledger, and the printed report all consistent on the corrected
+    value — otherwise the push would announce "매수" while the ledger
+    stored PASS, which happened in the NVDA_20260424_1137 run.
+
+    Position / bull / rebuttal are still drawn from the Steward's
+    narrative because the audit only corrects the verdict, not the
+    surrounding prose.
+    """
     parts = set(m.group(1).lower() for m in _PART_HEADER.finditer(report))
     has_economist = "economist" in parts
     has_skeptic = "skeptic" in parts
     has_steward = "steward" in parts
 
     steward_section = _section_slice(report, "Steward") or ""
+
+    # Run the discipline audit on the FULL combined report (so the
+    # Defender-aware path fires). Prefer the audit's corrected verdict
+    # over the Steward's raw words when the audit flagged a violation.
     verdict = _extract_verdict_word(steward_section)
     conviction = _extract_conviction(steward_section)
+    audit_downgraded = False
+    original_verdict: str | None = None
+    original_conviction: int | None = None
+    try:
+        from wise_investor.agents.steward_audit import audit_steward_section
+
+        audit = audit_steward_section(report)
+        if audit.violation and audit.corrected_verdict is not None:
+            original_verdict = verdict
+            original_conviction = conviction
+            verdict = audit.corrected_verdict
+            conviction = audit.corrected_conviction
+            audit_downgraded = True
+    except Exception:
+        # Audit failures should never block the summary — fall back to
+        # whatever the Steward's own text said.
+        pass
+
     position = _extract_position_sizing(steward_section)
     rationale = _extract_rationale_first_paragraph(steward_section)
     bull, rebuttal = _split_bull_vs_skeptic(rationale)
@@ -172,6 +231,9 @@ def extract_verdict_summary(symbol: str, report: str) -> VerdictSummary:
         has_economist=has_economist,
         has_skeptic=has_skeptic,
         has_steward=has_steward,
+        audit_downgraded=audit_downgraded,
+        original_verdict=original_verdict,
+        original_conviction=original_conviction,
     )
 
 
@@ -181,7 +243,13 @@ def extract_verdict_summary(symbol: str, report: str) -> VerdictSummary:
 
 
 def format_korean_summary(summary: VerdictSummary, report_path: str | None = None) -> str:
-    """Render a compact Korean push message (<= ~800 chars)."""
+    """Render a compact Korean push message (<= ~800 chars).
+
+    `report_path` is accepted for backwards compat with call sites but
+    NOT rendered into the message body — file paths on the Telegram
+    push are unclickable on mobile and clutter the summary. The run
+    script should send the .md file as a Telegram document instead.
+    """
     verdict_kr = VERDICT_KR.get(summary.verdict or "", "알 수 없음")
     conviction_display = (
         f"{summary.conviction}/5" if summary.conviction is not None else "—/5"
@@ -191,6 +259,23 @@ def format_korean_summary(summary: VerdictSummary, report_path: str | None = Non
     lines.append(f"📊 {summary.symbol} 분석 완료")
     lines.append("")
     lines.append(f"판정: *{verdict_kr}* · 확신도 {conviction_display}")
+
+    # When the Python audit downgraded the LLM's verdict, surface it.
+    # The user MUST see this — otherwise the Telegram banner looks
+    # consistent with the LLM narrative while the paper-trades ledger
+    # tells a different story.
+    if summary.audit_downgraded and summary.original_verdict:
+        original_kr = VERDICT_KR.get(summary.original_verdict, summary.original_verdict)
+        original_conv = (
+            f"{summary.original_conviction}/5"
+            if summary.original_conviction is not None
+            else "—/5"
+        )
+        lines.append(
+            f"⚠️ 감사 자동 조정: LLM 원본 {original_kr} {original_conv} → "
+            f"매트릭스 기준 {verdict_kr} {conviction_display}"
+        )
+
     if summary.position_sizing:
         lines.append(f"포지션 제안: {summary.position_sizing}")
     lines.append("")
@@ -216,8 +301,6 @@ def format_korean_summary(summary: VerdictSummary, report_path: str | None = Non
         lines.append("")
         lines.append(f"⚠️ 리포트에 누락된 파트: {', '.join(missing)}")
 
-    if report_path:
-        lines.append("")
-        lines.append(f"📄 전체: {report_path}")
-
+    # Note: report_path intentionally not rendered. The run script
+    # follows up with a sendDocument call for mobile-clickable access.
     return "\n".join(lines)

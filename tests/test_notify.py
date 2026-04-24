@@ -224,7 +224,12 @@ def test_verdict_kr_mapping_complete() -> None:
     assert VERDICT_KR["PASS"] == "관망"
 
 
-def test_format_korean_summary_includes_report_path() -> None:
+def test_format_korean_summary_does_not_render_report_path() -> None:
+    """Policy change: filesystem paths are unclickable on mobile and
+    clutter the summary. The run script follows up with a
+    sendDocument call instead. The `report_path` arg is still
+    accepted for backwards compat but intentionally not rendered.
+    """
     summary = VerdictSummary(
         symbol="NVDA",
         verdict="BUY",
@@ -237,7 +242,8 @@ def test_format_korean_summary_includes_report_path() -> None:
         has_steward=True,
     )
     text = format_korean_summary(summary, report_path="/tmp/nvda.md")
-    assert "/tmp/nvda.md" in text
+    assert "/tmp/nvda.md" not in text
+    assert "📄" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +320,146 @@ def test_chunk_text_hard_cut_when_no_newlines() -> None:
     chunks = _chunk_text(msg)
     assert len(chunks) >= 2
     assert all(len(c) <= 3900 for c in chunks)
+
+
+def test_chunk_text_respects_soft_boundary_at_sentence() -> None:
+    """_truncate_at_sentence clips at a period near soft_max."""
+    from wise_investor.notify.summary import _truncate_at_sentence
+
+    text = ("This is sentence one. " * 20).strip()  # ~440 chars
+    out = _truncate_at_sentence(text, soft_max=100, hard_max=200)
+    # Output ends with a period, not mid-word.
+    assert out.endswith(".")
+    assert len(out) <= 200
+
+
+def test_chunk_text_hard_cut_when_no_sentence_boundary() -> None:
+    from wise_investor.notify.summary import _truncate_at_sentence
+
+    text = "A" * 500
+    out = _truncate_at_sentence(text, soft_max=100, hard_max=200)
+    # No period anywhere → hard cut with ellipsis marker.
+    assert out.endswith("…")
+    assert len(out) <= 201  # 200 chars + ellipsis
+
+
+def test_truncate_short_text_unchanged() -> None:
+    from wise_investor.notify.summary import _truncate_at_sentence
+
+    assert _truncate_at_sentence("short.", soft_max=100) == "short."
+
+
+def test_extract_verdict_uses_audit_corrected_when_defender_downgrades() -> None:
+    """When the Defender says 0 DEFENDED / 1 CONCEDED and the Steward
+    issues BUY C4, the summary MUST show the audit-corrected PASS C1,
+    not the LLM's raw words. Otherwise Telegram and paper_trades
+    diverge — exact NVDA_20260424_1137 bug.
+    """
+    from wise_investor.notify.summary import extract_verdict_summary
+
+    report = """\
+# Part 5 · Defender
+
+### Response to Skeptic #1
+**Label:** CONCEDED
+
+**Tally:** 0 DEFENDED, 1 CONCEDED
+
+---
+
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+The Bull thesis is X.
+
+**NEUTRALIZED**: Defender said so.
+"""
+    s = extract_verdict_summary("NVDA", report)
+    # Corrected: 0D/1C → effective S > N → PASS C1.
+    assert s.verdict == "PASS"
+    assert s.conviction == 1
+    assert s.audit_downgraded is True
+    assert s.original_verdict == "BUY"
+    assert s.original_conviction == 4
+
+
+def test_extract_verdict_no_audit_action_leaves_steward_values() -> None:
+    """Clean reports (no audit violation) keep the Steward's verdict."""
+    from wise_investor.notify.summary import extract_verdict_summary
+
+    report = """\
+# Part 6 · Steward
+
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+- **NEUTRALIZED**: A [Source: fetch.revenue].
+- **NEUTRALIZED**: B [Source: fetch.net_income].
+"""
+    s = extract_verdict_summary("NVDA", report)
+    assert s.verdict == "BUY"
+    assert s.conviction == 4
+    assert s.audit_downgraded is False
+
+
+def test_format_korean_summary_shows_audit_downgrade_banner() -> None:
+    from wise_investor.notify.summary import (
+        VerdictSummary,
+        format_korean_summary,
+    )
+
+    s = VerdictSummary(
+        symbol="NVDA",
+        verdict="PASS",
+        conviction=1,
+        position_sizing="No position.",
+        bull_thesis="Bull X",
+        top_rebuttal="Skeptic Y",
+        has_economist=True,
+        has_skeptic=True,
+        has_steward=True,
+        audit_downgraded=True,
+        original_verdict="BUY",
+        original_conviction=4,
+    )
+    md = format_korean_summary(s)
+    assert "감사 자동 조정" in md
+    assert "매수 4/5" in md   # original
+    assert "관망 1/5" in md   # corrected
+    # No filesystem path — user's mobile won't handle it.
+    assert "/home" not in md
+    assert ".crew.md" not in md
+
+
+def test_format_korean_summary_omits_audit_line_when_clean() -> None:
+    from wise_investor.notify.summary import (
+        VerdictSummary,
+        format_korean_summary,
+    )
+
+    s = VerdictSummary(
+        symbol="NVDA",
+        verdict="BUY",
+        conviction=4,
+        position_sizing="3-5%",
+        bull_thesis="Strong cash flow",
+        top_rebuttal="Supply chain risk",
+        has_economist=True,
+        has_skeptic=True,
+        has_steward=True,
+    )
+    md = format_korean_summary(s)
+    assert "감사 자동 조정" not in md
 
 
 def test_chunk_text_limit_constant_matches_telegram() -> None:

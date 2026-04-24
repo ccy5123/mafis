@@ -51,12 +51,21 @@ def parse_crew_report(text: str, symbol_hint: str | None = None) -> CrewReportSu
     """
     symbol = (symbol_hint or _extract_symbol_from_report(text) or "").upper()
 
-    # What the LLM wrote (before audit correction).
+    # extract_verdict_summary now returns the audit-CORRECTED verdict
+    # under .verdict (and exposes .original_verdict when a downgrade
+    # happened). That matches what the Telegram summary shows.
     raw = extract_verdict_summary(symbol, text)
-    original_verdict = raw.verdict
-    original_conviction = raw.conviction
 
-    # What the discipline audit corrected (or left alone).
+    # What the LLM wrote (before audit correction) — for the ledger's
+    # original_* columns.
+    original_verdict = raw.original_verdict if raw.audit_downgraded else raw.verdict
+    original_conviction = (
+        raw.original_conviction if raw.audit_downgraded else raw.conviction
+    )
+
+    # Re-run the audit directly for the exact final verdict + audit
+    # flag. (Yes, this duplicates work inside extract_verdict_summary,
+    # but this function is called rarely and the audit is cheap.)
     audit = audit_steward_section(text)
 
     if audit.violation and audit.corrected_verdict is not None:
@@ -64,8 +73,8 @@ def parse_crew_report(text: str, symbol_hint: str | None = None) -> CrewReportSu
         final_conviction = audit.corrected_conviction
         audit_downgraded = True
     else:
-        final_verdict = audit.verdict or original_verdict
-        final_conviction = audit.conviction or original_conviction
+        final_verdict = audit.verdict or raw.verdict
+        final_conviction = audit.conviction or raw.conviction
         audit_downgraded = False
 
     return CrewReportSummary(
