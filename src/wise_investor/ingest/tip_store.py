@@ -15,7 +15,12 @@ Schema:
         id               INTEGER PRIMARY KEY,
         received_at      TEXT NOT NULL,  -- when Telegram delivered it
         raw_text         TEXT NOT NULL,  -- original message body
-        detected_tickers TEXT NOT NULL,  -- JSON array, e.g. '["NVDA"]'
+        category         TEXT NOT NULL,  -- ticker/macro/fx/sector/
+                                         -- geopolitics/commodity/none
+        detected_tickers TEXT NOT NULL,  -- JSON array, populated for
+                                         -- category=ticker
+        topics           TEXT,           -- JSON array of macro topics
+                                         -- (e.g. ["interest_rates"])
         lang             TEXT DEFAULT 'ko',
         sender           TEXT,           -- telegram username, optional
         source           TEXT DEFAULT 'telegram',
@@ -25,14 +30,16 @@ Schema:
     )
 
 Notes:
-  - detected_tickers is stored as a JSON array string so one tip can
-    cite multiple names ("NVDA 내리면 AMD가 덕볼까?"). Queries use the
-    sqlite3 json1 extension's `json_each` for containment lookups.
+  - detected_tickers and topics are JSON arrays so one tip can cite
+    multiple names or topics. Queries use the sqlite3 json1 extension's
+    `json_each` for containment lookups.
   - `consumed_by` is append-only (comma-separated tags) — re-running
     the same crew for the same ticker should NOT re-inject the same
     tip, so the injector checks this field to dedupe.
   - No dedup on (raw_text, received_at): the user may legitimately
     forward the same message twice; they're separate events.
+  - Schema migration: when opening an older database lacking the
+    `category` / `topics` columns, _ensure_schema ALTERs them in.
 """
 
 from __future__ import annotations
@@ -52,20 +59,45 @@ from wise_investor.config import settings
 logger = logging.getLogger(__name__)
 
 
-SCHEMA = """
+_SCHEMA_TABLE = """
 CREATE TABLE IF NOT EXISTS tips (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     received_at TEXT NOT NULL,
     raw_text TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'unknown',
     detected_tickers TEXT NOT NULL,
+    topics TEXT,
     lang TEXT NOT NULL DEFAULT 'ko',
     sender TEXT,
     source TEXT NOT NULL DEFAULT 'telegram',
     consumed_by TEXT,
     created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_tips_received_at ON tips(received_at);
 """
+
+# Indexes are created AFTER the ALTER-TABLE migration so they can
+# reference columns that might not exist on a legacy database.
+_SCHEMA_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_tips_received_at ON tips(received_at);
+CREATE INDEX IF NOT EXISTS idx_tips_category ON tips(category);
+"""
+
+
+# Fixed classification vocabulary. Kept in the store module (not
+# classifier) so anywhere that queries the table has access to the
+# canonical set without importing the LLM-adjacent classifier.
+CATEGORIES: frozenset[str] = frozenset(
+    {
+        "ticker",
+        "macro",
+        "fx",
+        "sector",
+        "geopolitics",
+        "commodity",
+        "none",
+        "unknown",  # transient value used before classification completes
+    }
+)
 
 
 @dataclass
@@ -75,7 +107,9 @@ class Tip:
     id: int
     received_at: str               # ISO datetime, e.g. 2026-04-24T11:37:00
     raw_text: str
-    detected_tickers: list[str]    # normalized uppercase tickers
+    category: str                  # ticker/macro/fx/sector/geopolitics/commodity/none
+    detected_tickers: list[str]    # normalized uppercase tickers (category=ticker)
+    topics: list[str]              # macro/sector/etc. topic slugs
     lang: str
     sender: str | None
     source: str
@@ -104,7 +138,23 @@ class TipStore:
 
     def _ensure_schema(self) -> None:
         with self._conn() as c:
-            c.executescript(SCHEMA)
+            # 1) CREATE TABLE IF NOT EXISTS — no-op on legacy databases.
+            c.executescript(_SCHEMA_TABLE)
+            # 2) ALTER TABLE ADD COLUMN for missing pieces. PRAGMA
+            # table_info returns (cid, name, type, notnull, dflt, pk).
+            existing_cols = {
+                r[1] for r in c.execute("PRAGMA table_info(tips)").fetchall()
+            }
+            if "category" not in existing_cols:
+                c.execute(
+                    "ALTER TABLE tips ADD COLUMN category TEXT NOT NULL "
+                    "DEFAULT 'unknown'"
+                )
+            if "topics" not in existing_cols:
+                c.execute("ALTER TABLE tips ADD COLUMN topics TEXT")
+            # 3) CREATE INDEX — now safe because all referenced
+            # columns exist.
+            c.executescript(_SCHEMA_INDEXES)
             c.commit()
 
     # ---- CRUD -------------------------------------------------------
@@ -112,7 +162,9 @@ class TipStore:
     def record_tip(
         self,
         raw_text: str,
+        category: str = "unknown",
         detected_tickers: list[str] | None = None,
+        topics: list[str] | None = None,
         lang: str = "ko",
         sender: str | None = None,
         source: str = "telegram",
@@ -120,15 +172,31 @@ class TipStore:
     ) -> Tip:
         """Insert a new tip row and return the populated object.
 
-        `detected_tickers` is normalized to uppercase; `raw_text` is
-        stored verbatim. Blank text raises ValueError so an empty
-        Telegram message can't pollute the store.
+        `detected_tickers` is normalized to uppercase (populated when
+        `category == "ticker"`). `topics` is a list of macro topic
+        slugs (populated for macro/fx/sector/geopolitics/commodity).
+        `raw_text` is stored verbatim; blank text raises ValueError.
+        Unknown categories fall back to 'unknown' so classifier
+        failures don't block the insert.
         """
         if not raw_text or not raw_text.strip():
             raise ValueError("raw_text must not be empty")
 
+        normalized_category = (category or "unknown").strip().lower()
+        if normalized_category not in CATEGORIES:
+            logger.warning(
+                "Unknown tip category %r; persisting as 'unknown'.",
+                normalized_category,
+            )
+            normalized_category = "unknown"
+
         tickers = [t.strip().upper() for t in (detected_tickers or []) if t.strip()]
         tickers_json = json.dumps(tickers, ensure_ascii=False)
+
+        topic_list = [t.strip().lower() for t in (topics or []) if t.strip()]
+        topics_json = (
+            json.dumps(topic_list, ensure_ascii=False) if topic_list else None
+        )
 
         ra = received_at or dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         now = dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
@@ -137,11 +205,14 @@ class TipStore:
             cur = c.execute(
                 """
                 INSERT INTO tips
-                    (received_at, raw_text, detected_tickers, lang,
-                     sender, source, consumed_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (received_at, raw_text, category, detected_tickers,
+                     topics, lang, sender, source, consumed_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (ra, raw_text, tickers_json, lang, sender, source, None, now),
+                (
+                    ra, raw_text, normalized_category, tickers_json,
+                    topics_json, lang, sender, source, None, now,
+                ),
             )
             c.commit()
             tip_id = cur.lastrowid or -1
@@ -160,14 +231,22 @@ class TipStore:
     def list_tips(
         self,
         ticker: str | None = None,
+        category: str | None = None,
+        categories: list[str] | None = None,
+        topic: str | None = None,
         since: str | None = None,
         limit: int | None = None,
     ) -> list[Tip]:
         """Return tips ordered newest-first.
 
-        `ticker` filters to rows whose detected_tickers JSON array
-        contains an exact match (case-insensitive; input is uppercased).
-        `since` is an ISO timestamp lower bound on received_at.
+        Filters (combinable, all AND):
+          - `ticker`: detected_tickers contains an exact match
+            (case-insensitive).
+          - `category`: exact category match. Pass one of CATEGORIES.
+          - `categories`: filter to any in the list (macro pooling
+            for Economist context: e.g. ["macro","fx","commodity"]).
+          - `topic`: topics JSON array contains the slug (lowercased).
+          - `since`: ISO timestamp lower bound on received_at.
         """
         params: list = []
         q = "SELECT t.* FROM tips t WHERE 1=1"
@@ -181,6 +260,24 @@ class TipStore:
                 " )"
             )
             params.append(ticker.upper())
+
+        if category:
+            q += " AND t.category = ?"
+            params.append(category.strip().lower())
+
+        if categories:
+            placeholders = ",".join(["?"] * len(categories))
+            q += f" AND t.category IN ({placeholders})"
+            params.extend(c.strip().lower() for c in categories)
+
+        if topic:
+            q += (
+                " AND t.topics IS NOT NULL AND EXISTS ("
+                " SELECT 1 FROM json_each(t.topics) "
+                " WHERE LOWER(value) = ?"
+                " )"
+            )
+            params.append(topic.strip().lower())
 
         if since:
             q += " AND t.received_at >= ?"
@@ -251,12 +348,35 @@ def _row_to_tip(row: sqlite3.Row) -> Tip:
             tickers = []
     except (json.JSONDecodeError, TypeError):
         tickers = []
+
+    # topics is NULL-able (older rows pre-migration).
+    raw_topics = None
+    try:
+        raw_topics = row["topics"]
+    except IndexError:
+        raw_topics = None
+    topics: list[str] = []
+    if raw_topics:
+        try:
+            parsed = json.loads(raw_topics)
+            if isinstance(parsed, list):
+                topics = [str(t).strip().lower() for t in parsed if str(t).strip()]
+        except (json.JSONDecodeError, TypeError):
+            topics = []
+
+    try:
+        category = row["category"] or "unknown"
+    except IndexError:
+        category = "unknown"
+
     consumed = [t for t in (row["consumed_by"] or "").split(",") if t]
     return Tip(
         id=int(row["id"]),
         received_at=row["received_at"],
         raw_text=row["raw_text"],
+        category=str(category).strip().lower(),
         detected_tickers=[str(t).upper() for t in tickers],
+        topics=topics,
         lang=row["lang"] or "ko",
         sender=row["sender"],
         source=row["source"] or "telegram",
@@ -265,4 +385,4 @@ def _row_to_tip(row: sqlite3.Row) -> Tip:
     )
 
 
-__all__ = ["Tip", "TipStore"]
+__all__ = ["CATEGORIES", "Tip", "TipStore"]

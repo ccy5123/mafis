@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Callable
 
 from wise_investor.config import PROJECT_ROOT
+from wise_investor.ingest.classifier import (
+    TipClassification,
+    classify_tip,
+    default_llm_call as default_classifier_llm,
+)
 from wise_investor.ingest.intent_parser import (
     HELP_TEXT_KO,
     UNKNOWN_COMMAND_TEXT_KO,
@@ -26,10 +31,6 @@ from wise_investor.ingest.intent_parser import (
     parse_intent,
 )
 from wise_investor.ingest.telegram_receiver import TelegramMessage
-from wise_investor.ingest.ticker_extractor import (
-    default_llm_fallback,
-    extract_tickers,
-)
 from wise_investor.ingest.tip_store import Tip, TipStore
 
 
@@ -37,9 +38,24 @@ logger = logging.getLogger(__name__)
 
 
 # Callable shapes — declared here so tests can inject fakes.
-ExtractorFn = Callable[[str], list[str]]
+ClassifierFn = Callable[[str], TipClassification]
 ReplyFn = Callable[[str], None]
 CrewInvokerFn = Callable[[str], bool]
+
+
+# Human-readable Korean labels for each category — shown in the
+# acknowledgement reply so the user sees how the bot classified
+# their message (and can push back if it's wrong).
+_CATEGORY_LABEL_KO: dict[str, str] = {
+    "ticker": "종목",
+    "macro": "거시",
+    "fx": "환율",
+    "sector": "섹터",
+    "geopolitics": "지정학",
+    "commodity": "원자재",
+    "none": "투자 맥락 없음",
+    "unknown": "분류 실패",
+}
 
 
 @dataclass
@@ -86,15 +102,15 @@ class TipDispatcher:
         self,
         tip_store: TipStore,
         reply_fn: ReplyFn,
-        extractor: ExtractorFn | None = None,
+        classifier: ClassifierFn | None = None,
         crew_invoker: CrewInvokerFn | None = None,
     ) -> None:
         self.store = tip_store
         self.reply = reply_fn
-        # Default extractor uses the bundled alias map + Qwen fallback.
-        # Tests pass a deterministic stub.
-        self.extractor = extractor or (
-            lambda text: extract_tickers(text, llm_fallback=default_llm_fallback)
+        # Default classifier uses Qwen 2.5 7B with the bundled alias
+        # map as vocab hint. Tests pass a deterministic stub.
+        self.classifier = classifier or (
+            lambda text: classify_tip(text, llm_call=default_classifier_llm)
         )
         self.crew_invoker = crew_invoker or _default_crew_invoker
 
@@ -192,16 +208,18 @@ class TipDispatcher:
     ) -> DispatchResult:
         text = intent.raw_text
         try:
-            tickers = self.extractor(text)
+            classification = self.classifier(text)
         except Exception as e:
-            logger.warning("Ticker extraction failed: %s", e)
-            tickers = []
+            logger.warning("Classifier failed: %s", e)
+            classification = TipClassification(category="unknown")
 
         tip: Tip | None = None
         try:
             tip = self.store.record_tip(
                 raw_text=text,
-                detected_tickers=tickers,
+                category=classification.category,
+                detected_tickers=classification.tickers,
+                topics=classification.topics,
                 lang="ko",
                 sender=msg.sender_username or msg.sender_first_name,
             )
@@ -211,26 +229,37 @@ class TipDispatcher:
             self.reply(reply)
             return DispatchResult(action="tip_stored", reply_text=reply)
 
-        if tickers:
-            ticker_display = ", ".join(tickers)
-            reply = (
-                f"✅ 팁 저장됨 #{tip.id}\n"
-                f"감지된 종목: {ticker_display}"
-            )
-        else:
-            reply = (
-                f"⚠️ 팁 저장됨 #{tip.id}\n"
-                "메세지에서 종목을 추출하지 못했습니다. "
-                "`data/korean_ticker_aliases.json`에 별칭을 추가해 보세요."
-            )
-
+        reply = _render_tip_ack(tip, classification)
         self.reply(reply)
         return DispatchResult(
             action="tip_stored",
             reply_text=reply,
             stored_tip_id=tip.id,
-            extracted_tickers=tickers,
+            extracted_tickers=classification.tickers,
         )
+
+
+def _render_tip_ack(tip: Tip, cls: TipClassification) -> str:
+    """Build the acknowledgement message the bot sends back to the user."""
+    label = _CATEGORY_LABEL_KO.get(cls.category, cls.category)
+    header = f"✅ 팁 저장됨 #{tip.id} ({label})"
+
+    if cls.category == "ticker" and cls.tickers:
+        return f"{header}\n감지 종목: {', '.join(cls.tickers)}"
+    if cls.category in ("macro", "fx", "sector", "geopolitics", "commodity"):
+        topics = ", ".join(cls.topics) if cls.topics else "미분류"
+        return f"{header}\n주제: {topics}"
+    if cls.category == "none":
+        return (
+            f"ℹ️ 저장됨 #{tip.id} (투자 맥락 없음)\n"
+            "참고용으로만 보관. 다음 크루 실행에 주입되지 않음."
+        )
+    # category == 'unknown' — classifier couldn't decide.
+    return (
+        f"⚠️ 팁 저장됨 #{tip.id} (분류 실패)\n"
+        "LLM 분류가 실패하거나 모호해서 'unknown'으로 보관. "
+        "`/tips` 로 확인 후 수동 검토 가능."
+    )
 
 
 def _format_tips_list(tips: list[Tip], ticker_filter: str | None) -> str:
@@ -243,14 +272,20 @@ def _format_tips_list(tips: list[Tip], ticker_filter: str | None) -> str:
     lines = [header, ""]
     for i, t in enumerate(tips, start=1):
         sender = f" (by @{t.sender})" if t.sender else ""
-        tickers_str = ", ".join(t.detected_tickers) if t.detected_tickers else "미추출"
+        label = _CATEGORY_LABEL_KO.get(t.category, t.category)
+        if t.category == "ticker":
+            tag = ", ".join(t.detected_tickers) if t.detected_tickers else "종목?"
+        elif t.category in ("macro", "fx", "sector", "geopolitics", "commodity"):
+            tag = f"{label}: {', '.join(t.topics)}" if t.topics else label
+        else:
+            tag = label
         # Trim long tip bodies — Telegram caps messages at 4096, and
         # the summary is more readable when tips fit on 2-3 lines.
         body = t.raw_text.replace("\n", " ")
         if len(body) > 140:
             body = body[:137].rstrip() + "…"
         lines.append(
-            f"{i}. [{tickers_str}] {t.received_at[:16]} — \"{body}\"{sender}"
+            f"{i}. [{tag}] {t.received_at[:16]} — \"{body}\"{sender}"
         )
     return "\n".join(lines)
 

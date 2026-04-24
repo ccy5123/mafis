@@ -1,4 +1,9 @@
-"""Tests for the ticker extractor used by the tip bot."""
+"""Tests for the ticker-alias vocabulary helpers.
+
+Extraction itself has moved to `classifier.py` (LLM-first, context-aware).
+This file covers only the alias-map loader, inverse-index builder, and
+shape normalizer.
+"""
 
 from __future__ import annotations
 
@@ -9,24 +14,18 @@ import pytest
 from wise_investor.ingest.ticker_extractor import (
     _normalize_ticker,
     build_inverse_index,
-    extract_tickers,
     load_aliases,
 )
 
 
-# Deterministic minimal alias map for most tests — keeps test output
-# independent of the default seed list evolving.
+# Deterministic minimal alias map — keeps test output stable as the
+# default seed list grows.
 _TINY_MAP = {
     "NVDA": ["nvda", "nvidia", "엔비디아"],
     "TSM": ["tsm", "tsmc", "티에스엠씨"],
     "AMD": ["amd", "에이엠디"],
     "005930": ["005930", "삼성전자"],
 }
-
-
-@pytest.fixture
-def index() -> dict[str, str]:
-    return build_inverse_index(_TINY_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -57,131 +56,8 @@ def test_build_inverse_index_skips_blank_aliases() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Static-map extraction — Korean & English paths
+# _normalize_ticker
 # ---------------------------------------------------------------------------
-
-
-def test_extract_bare_us_ticker(index) -> None:
-    assert extract_tickers("요즘 NVDA 어때?", alias_index=index) == ["NVDA"]
-
-
-def test_extract_english_company_name(index) -> None:
-    assert extract_tickers("nvidia 실적 좋대", alias_index=index) == ["NVDA"]
-
-
-def test_extract_korean_alias(index) -> None:
-    assert extract_tickers("엔비디아 살까?", alias_index=index) == ["NVDA"]
-
-
-def test_extract_krx_korean_name(index) -> None:
-    assert extract_tickers("삼성전자 반등할까", alias_index=index) == ["005930"]
-
-
-def test_extract_krx_numeric_code(index) -> None:
-    assert extract_tickers("005930 주가 움직이네", alias_index=index) == ["005930"]
-
-
-def test_extract_multiple_tickers_preserves_order(index) -> None:
-    text = "TSMC 랑 NVDA 둘 다 오르네"
-    assert extract_tickers(text, alias_index=index) == ["TSM", "NVDA"]
-
-
-def test_extract_returns_no_duplicates(index) -> None:
-    text = "엔비디아가 오르면 NVDA 주가도 당연히 오르고 nvidia 다들 산대"
-    assert extract_tickers(text, alias_index=index) == ["NVDA"]
-
-
-def test_extract_is_case_insensitive(index) -> None:
-    assert extract_tickers("Nvda 좋대", alias_index=index) == ["NVDA"]
-    assert extract_tickers("nVdA 좋대", alias_index=index) == ["NVDA"]
-
-
-def test_extract_empty_text_returns_empty(index) -> None:
-    assert extract_tickers("", alias_index=index) == []
-    assert extract_tickers("   \n  ", alias_index=index) == []
-
-
-def test_extract_no_tickers_returns_empty(index) -> None:
-    assert extract_tickers("오늘 날씨 좋다", alias_index=index) == []
-
-
-# ---------------------------------------------------------------------------
-# ASCII word-boundary — avoid false positives
-# ---------------------------------------------------------------------------
-
-
-def test_ascii_alias_requires_word_boundary(index) -> None:
-    """'amd' should NOT match 'namdoe' or 'amdongnet' — word-bounded
-    regex prevents the substring false-positive that a naive search
-    would hit.
-    """
-    assert extract_tickers("namdong은 별개지", alias_index=index) == []
-    assert extract_tickers("amdongnet 어쩌고", alias_index=index) == []
-    # But a legitimate mention does match.
-    assert extract_tickers("AMD 올랐어", alias_index=index) == ["AMD"]
-
-
-def test_hangul_alias_substring_match_is_fine(index) -> None:
-    """Korean text has no spaces between words, so substring
-    matching is appropriate for Hangul aliases. '엔비디아' should
-    match inside '엔비디아주식도'.
-    """
-    assert extract_tickers("엔비디아주식도 사자", alias_index=index) == ["NVDA"]
-
-
-# ---------------------------------------------------------------------------
-# LLM fallback path
-# ---------------------------------------------------------------------------
-
-
-def test_llm_fallback_invoked_only_when_static_map_misses(index) -> None:
-    called: list[str] = []
-
-    def _stub(text: str) -> list[str]:
-        called.append(text)
-        return ["NVDA"]
-
-    # Static map already resolves this — LLM must NOT be called.
-    out = extract_tickers("NVDA 좋다", alias_index=index, llm_fallback=_stub)
-    assert out == ["NVDA"]
-    assert called == []
-
-
-def test_llm_fallback_invoked_when_static_map_empty(index) -> None:
-    """Unknown Korean name triggers the LLM fallback."""
-    called: list[str] = []
-
-    def _stub(text: str) -> list[str]:
-        called.append(text)
-        return ["MSFT"]
-
-    out = extract_tickers(
-        "마이크로소프트 뉴스", alias_index=index, llm_fallback=_stub
-    )
-    assert out == ["MSFT"]
-    assert len(called) == 1
-
-
-def test_llm_fallback_output_is_normalized(index) -> None:
-    """LLM might return lowercase or weird shapes — normalizer filters."""
-    def _stub(text: str) -> list[str]:
-        # Mix of valid + garbage — garbage must be dropped.
-        return ["nvda", "hello world", "123", "005930", "THISIS2LONG"]
-
-    out = extract_tickers("unknown", alias_index=index, llm_fallback=_stub)
-    assert "NVDA" in out
-    assert "005930" in out
-    assert "HELLO WORLD" not in out
-    assert "123" not in out
-    assert "THISIS2LONG" not in out
-
-
-def test_llm_fallback_error_is_swallowed(index) -> None:
-    def _flaky(text: str) -> list[str]:
-        raise RuntimeError("mock Ollama outage")
-
-    out = extract_tickers("unknown name", alias_index=index, llm_fallback=_flaky)
-    assert out == []
 
 
 def test_normalize_ticker_shapes() -> None:
@@ -262,18 +138,11 @@ def test_load_aliases_ignores_non_list_values(tmp_path) -> None:
     assert isinstance(aliases["NVDA"], list)
 
 
-# ---------------------------------------------------------------------------
-# Integration with default (seed) aliases
-# ---------------------------------------------------------------------------
-
-
-def test_default_seeds_cover_common_korean_names() -> None:
-    """Smoke test the seed list — if these break, users will file
-    bugs the moment they start forwarding tips.
+def test_load_aliases_seeds_cover_common_korean_names() -> None:
+    """The classifier uses these defaults to build its vocab hint;
+    if these regress, the LLM loses Korean-name grounding.
     """
-    out = extract_tickers("엔비디아 좋대")
-    assert "NVDA" in out
-    out = extract_tickers("삼성전자 반등할까")
-    assert "005930" in out
-    out = extract_tickers("테슬라 5% 상승")
-    assert "TSLA" in out
+    aliases = load_aliases()
+    assert "엔비디아" in aliases["NVDA"]
+    assert "삼성전자" in aliases["005930"]
+    assert "테슬라" in aliases["TSLA"]

@@ -1,36 +1,26 @@
-"""Extract stock tickers from free-text tips (Korean / English).
+"""Ticker-alias vocabulary helpers.
 
-Called by the tip_bot when a user forwards a message from their
-stock group chat. The extractor runs two passes:
-
-  1. Static alias map — fast, deterministic, covers the names the
-     user cares about. Seeded with ~25 well-known US + KRX names and
-     user-extensible via `data/korean_ticker_aliases.json`.
-
-  2. Qwen 2.5 7B fallback (optional) — only invoked when the static
-     map returns zero hits AND the caller provides an `llm_fallback`.
-     Guards the LLM output to valid ticker shapes (1-5 uppercase
-     letters for US, 6 digits for KRX).
+Provides the canonical map of (ticker → Korean/English aliases) plus
+normalization helpers used by the classifier. The actual extraction
+work — deciding whether a mention is in an investment context — lives
+in `classifier.py`; this module is intentionally small and LLM-free.
 
 Design notes:
-  - Hangul aliases are substring-matched (Korean has no spaces between
-    most words). ASCII aliases require \\b word boundaries so "amd"
-    doesn't match "amdk" or "namd".
-  - De-duplicates in first-seen order so the persisted list is stable
-    and the downstream crew injection respects the order of mention.
-  - Case-insensitive: the map's inverse index is lower-cased once at
-    load time.
+  - Alias map seeded inline, user-extensible via
+    `data/korean_ticker_aliases.json` (file entries merge with defaults;
+    entries override on key conflict).
+  - `_normalize_ticker` enforces a shape: 1-5 uppercase ASCII letters
+    (US tickers) or 6 digits (KRX stock codes). Reject anything else
+    so LLM garbage (1234567, "hello world") never reaches the store.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
-from typing import Callable
 
-from wise_investor.config import PROJECT_ROOT, settings
+from wise_investor.config import PROJECT_ROOT
 
 
 logger = logging.getLogger(__name__)
@@ -74,9 +64,6 @@ _DEFAULT_ALIASES: dict[str, list[str]] = {
 }
 
 
-_ASCII_ALIAS_RE = re.compile(r"^[A-Za-z0-9]+$")
-
-
 def load_aliases(path: Path | None = None) -> dict[str, list[str]]:
     """Load the ticker alias map, merging file overrides onto the defaults."""
     merged: dict[str, list[str]] = {
@@ -114,66 +101,6 @@ def build_inverse_index(aliases: dict[str, list[str]]) -> dict[str, str]:
     return out
 
 
-def extract_tickers(
-    text: str,
-    alias_index: dict[str, str] | None = None,
-    llm_fallback: Callable[[str], list[str]] | None = None,
-) -> list[str]:
-    """Return tickers mentioned in `text`, de-duplicated, first-seen order.
-
-    Strategy:
-      1. Static alias map — substring for Hangul, \\b-bounded regex for
-         ASCII. O(|aliases| × |text|), trivial at our scale.
-      2. If no hits AND `llm_fallback` is supplied, invoke it; filter
-         results to valid ticker shapes.
-
-    Pass `alias_index` to override the default inverse map (used by
-    tests to inject a tiny, deterministic mapping).
-    """
-    if not text or not text.strip():
-        return []
-
-    if alias_index is None:
-        alias_index = build_inverse_index(load_aliases())
-
-    text_lower = text.lower()
-    found: list[str] = []
-
-    # Order matters for first-seen stability: record (first_position,
-    # ticker) for every alias that matches, then sort and dedupe.
-    mentions: list[tuple[int, str]] = []
-    for alias, ticker in alias_index.items():
-        position: int | None = None
-        if _ASCII_ALIAS_RE.match(alias):
-            m = re.search(r"\b" + re.escape(alias) + r"\b", text_lower)
-            if m is not None:
-                position = m.start()
-        else:
-            idx = text_lower.find(alias)
-            if idx >= 0:
-                position = idx
-        if position is not None:
-            mentions.append((position, ticker))
-
-    mentions.sort(key=lambda p: p[0])
-    for _, ticker in mentions:
-        if ticker not in found:
-            found.append(ticker)
-
-    if not found and llm_fallback is not None:
-        try:
-            fallback = llm_fallback(text)
-        except Exception as e:
-            logger.warning("LLM ticker fallback failed: %s", e)
-            fallback = []
-        for raw in fallback:
-            canonical = _normalize_ticker(raw)
-            if canonical and canonical not in found:
-                found.append(canonical)
-
-    return found
-
-
 def _normalize_ticker(raw: str) -> str | None:
     """Accept only sanely-shaped tickers to reject LLM garbage.
 
@@ -192,70 +119,7 @@ def _normalize_ticker(raw: str) -> str | None:
     return None
 
 
-def default_llm_fallback(text: str) -> list[str]:
-    """Production Ollama call: ask Qwen to extract tickers as JSON array.
-
-    Separated from `_default_llm_call` in the translation package
-    because the prompt and parsing are different. Still uses the
-    Analyst model at temp=0, seed=42 for determinism.
-    """
-    import ollama
-
-    system = (
-        "You are a stock ticker extractor. Given a Korean or English "
-        "message, return a JSON array of stock tickers mentioned. "
-        "Use standard US tickers for US stocks (e.g. NVDA, AAPL, TSLA). "
-        "Use 6-digit KRX codes for Korean stocks (e.g. 005930 for "
-        "Samsung Electronics). If no ticker is mentioned, return []. "
-        "Output ONLY the JSON array, nothing else — no explanation, "
-        "no preamble, no markdown fences."
-    )
-
-    fewshot = [
-        {"role": "user", "content": "엔비디아 실적 좋대"},
-        {"role": "assistant", "content": '["NVDA"]'},
-        {"role": "user", "content": "TSMC랑 AMD 둘 다 오르는데"},
-        {"role": "assistant", "content": '["TSM","AMD"]'},
-        {"role": "user", "content": "삼성전자 반등할까?"},
-        {"role": "assistant", "content": '["005930"]'},
-        {"role": "user", "content": "오늘 날씨 좋네"},
-        {"role": "assistant", "content": "[]"},
-    ]
-
-    resp = ollama.chat(
-        model=settings.analyst_model,
-        messages=[
-            {"role": "system", "content": system},
-            *fewshot,
-            {"role": "user", "content": text},
-        ],
-        options={
-            "temperature": settings.llm_temperature,
-            "seed": settings.llm_seed,
-        },
-    )
-    raw = (resp["message"]["content"] or "").strip()
-
-    # Strip markdown code fences if the LLM sneaks them in.
-    if raw.startswith("```"):
-        parts = raw.split("```")
-        if len(parts) >= 2:
-            raw = parts[1].strip()
-            if raw.startswith("json"):
-                raw = raw[4:].strip()
-
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return [str(x) for x in parsed]
-    except json.JSONDecodeError:
-        logger.warning("LLM fallback returned non-JSON: %r", raw[:80])
-    return []
-
-
 __all__ = [
     "build_inverse_index",
-    "default_llm_fallback",
-    "extract_tickers",
     "load_aliases",
 ]
