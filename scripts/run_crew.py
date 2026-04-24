@@ -44,10 +44,12 @@ from wise_investor.agents.tasks import (  # noqa: E402
 from wise_investor.agents.valuer import make_valuer_system_prompt  # noqa: E402
 from wise_investor.config import settings  # noqa: E402
 from wise_investor.notify.summary import (  # noqa: E402
+    SUPPORTED_LANGUAGES,
     extract_verdict_summary,
-    format_korean_summary,
+    format_summary,
 )
-from wise_investor.notify.telegram import TelegramNotifier  # noqa: E402
+from wise_investor.notify.telegram import TelegramNotifier
+from wise_investor.translation import translate_report  # noqa: E402  # noqa: E402
 
 
 console = Console()
@@ -217,23 +219,79 @@ def run(symbol: str) -> int:
     except Exception as e:
         console.print(f"[yellow]Paper trade record skipped: {e}[/yellow]")
 
-    # -- Push Korean summary to Telegram if configured (no-op otherwise)
+    # -- Push localized summary to Telegram if configured (no-op otherwise)
     notifier = TelegramNotifier()
     if notifier.configured:
+        # Resolve target language. Invalid values (typo in .env) fall
+        # back to Korean silently so a config mistake doesn't kill the
+        # push. SUPPORTED_LANGUAGES is the locale pack in summary.py.
+        user_lang = (settings.user_language or "ko").lower()
+        if user_lang not in SUPPORTED_LANGUAGES:
+            console.print(
+                f"[yellow]Unsupported user_language={user_lang!r}; "
+                "falling back to 'ko' for the Telegram summary.[/yellow]"
+            )
+            user_lang = "ko"
+
         summary = extract_verdict_summary(symbol, result.combined_markdown)
-        korean = format_korean_summary(summary)
-        sent = notifier.send(korean)
+        # Narrative fragments (bull / rebuttal / position sizing) are
+        # left in their English source form. We tried localizing them
+        # via Qwen 2.5 7B but the model drifted into Chinese meta-
+        # commentary on some snippets, producing worse output than
+        # leaving it English. Labels (verdict, conviction, position
+        # override) ARE localized because they come from the
+        # deterministic LOCALE pack, not an LLM.
+        summary_text = format_summary(summary, lang=user_lang)
+        sent = notifier.send(summary_text)
         if sent:
-            console.print("[cyan]📨 Telegram summary pushed[/cyan]")
+            console.print(
+                f"[cyan]📨 Telegram summary pushed ({user_lang})[/cyan]"
+            )
         else:
             console.print("[yellow]Telegram push failed — see logs[/yellow]")
 
-        # Follow up with the full .md report as a document attachment
-        # so the user can open it with a single tap on mobile (paths
-        # pasted into a message body are not clickable on mobile
-        # Telegram clients).
-        doc_caption = f"📄 {symbol} 전체 리포트"
-        doc_sent = notifier.send_document(str(report_path), caption=doc_caption)
+        # Produce the attached .md in the user's language. English is
+        # a no-op so we just attach the original; other languages go
+        # through the Ollama translator (Qwen 2.5 7B, temp=0, seed=42).
+        # The translated file is saved alongside the English report so
+        # the user can inspect both later if needed.
+        attach_path = report_path
+        caption_by_lang = {
+            "ko": f"📄 {symbol} 전체 리포트",
+            "en": f"📄 {symbol} full report",
+            "ja": f"📄 {symbol} 全体レポート",
+            "zh": f"📄 {symbol} 完整报告",
+        }
+        doc_caption = caption_by_lang.get(user_lang, caption_by_lang["ko"])
+
+        if user_lang != "en":
+            try:
+                console.print(
+                    f"[dim]Translating report → {user_lang} "
+                    "(Ollama Qwen) …[/dim]"
+                )
+                import time as _time
+                t_trans_start = _time.perf_counter()
+                translated_md = translate_report(
+                    result.combined_markdown, target_lang=user_lang
+                )
+                trans_elapsed = _time.perf_counter() - t_trans_start
+                translated_path = REPORTS_DIR / (
+                    f"{symbol}_{stamp}.crew.{user_lang}.md"
+                )
+                translated_path.write_text(translated_md, encoding="utf-8")
+                attach_path = translated_path
+                console.print(
+                    f"[cyan]🌐 Translated report saved:[/cyan] "
+                    f"{translated_path} ({trans_elapsed:.1f}s)"
+                )
+            except Exception as e:
+                console.print(
+                    f"[yellow]Report translation failed ({e}); "
+                    "attaching English .md instead.[/yellow]"
+                )
+
+        doc_sent = notifier.send_document(str(attach_path), caption=doc_caption)
         if doc_sent:
             console.print("[cyan]📎 Telegram document pushed[/cyan]")
         else:

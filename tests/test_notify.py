@@ -471,3 +471,215 @@ def test_chunk_text_limit_constant_matches_telegram() -> None:
     assert TELEGRAM_MAX_MESSAGE_LEN == 4096
     # Safe cap leaves room for the "(part i/N)" suffix.
     assert _CHUNK_SAFE_LEN < TELEGRAM_MAX_MESSAGE_LEN
+
+
+# ---------------------------------------------------------------------------
+# Fix A — audit downgrade rewrites position sizing
+# ---------------------------------------------------------------------------
+
+
+def test_format_summary_overrides_position_when_audit_downgrades_to_pass() -> None:
+    """When the audit downgrades BUY → PASS, the Steward's original
+    BUY-flavored position text (e.g. '2-3% of equity allocation')
+    would be misleading on a PASS verdict. The renderer auto-overrides
+    with a canonical stand-aside message aligned to the PASS verdict.
+    Exact NVDA_20260424_1137 bug scenario.
+    """
+    from wise_investor.notify.summary import (
+        VerdictSummary,
+        format_korean_summary,
+    )
+
+    s = VerdictSummary(
+        symbol="NVDA",
+        verdict="PASS",
+        conviction=1,
+        position_sizing="2-3% of equity allocation for this conviction level.",
+        bull_thesis="Bull.",
+        top_rebuttal="Rebuttal.",
+        has_economist=True,
+        has_skeptic=True,
+        has_steward=True,
+        audit_downgraded=True,
+        original_verdict="BUY",
+        original_conviction=4,
+    )
+    text = format_korean_summary(s)
+    # The Steward's BUY-flavored sizing must NOT appear.
+    assert "2-3%" not in text
+    # The canonical PASS stand-aside message must appear.
+    assert "관망" in text and "포지션 없음" in text
+
+
+def test_format_summary_overrides_position_when_audit_downgrades_to_hold() -> None:
+    from wise_investor.notify.summary import (
+        VerdictSummary,
+        format_korean_summary,
+    )
+
+    s = VerdictSummary(
+        symbol="NVDA",
+        verdict="HOLD",
+        conviction=2,
+        position_sizing="Add 2-3% at current prices.",
+        bull_thesis="Bull.",
+        top_rebuttal="Rebuttal.",
+        has_economist=True,
+        has_skeptic=True,
+        has_steward=True,
+        audit_downgraded=True,
+        original_verdict="BUY",
+        original_conviction=4,
+    )
+    text = format_korean_summary(s)
+    assert "2-3%" not in text
+    assert "기존 포지션 유지" in text
+
+
+def test_format_summary_preserves_position_when_no_audit_downgrade() -> None:
+    """Clean reports keep the Steward's original sizing text verbatim."""
+    from wise_investor.notify.summary import (
+        VerdictSummary,
+        format_korean_summary,
+    )
+
+    s = VerdictSummary(
+        symbol="NVDA",
+        verdict="BUY",
+        conviction=4,
+        position_sizing="3-5% of equity allocation",
+        bull_thesis=None,
+        top_rebuttal=None,
+        has_economist=True,
+        has_skeptic=True,
+        has_steward=True,
+    )
+    text = format_korean_summary(s)
+    assert "3-5%" in text
+
+
+# ---------------------------------------------------------------------------
+# Fix B — bull / rebuttal keep their trailing punctuation
+# ---------------------------------------------------------------------------
+
+
+def test_split_bull_vs_skeptic_preserves_or_adds_trailing_period() -> None:
+    """The raw _split_bull_vs_skeptic used to .rstrip('.') which made
+    the Telegram summary look mid-sentence truncated. We now preserve
+    (or re-append) the terminator so both fragments read as complete
+    sentences.
+    """
+    from wise_investor.notify.summary import _split_bull_vs_skeptic
+
+    para = (
+        "The Bull thesis is that NVIDIA's lead is durable. "
+        "The Skeptic's surviving rebuttal is that compute is commoditizing."
+    )
+    bull, reb = _split_bull_vs_skeptic(para)
+    assert bull is not None and reb is not None
+    assert bull.endswith(".")
+    assert reb.endswith(".")
+
+
+def test_split_bull_vs_skeptic_appends_period_when_missing() -> None:
+    """If the upstream Steward prose cut off without a period, we add one."""
+    from wise_investor.notify.summary import _split_bull_vs_skeptic
+
+    # No trailing period on either fragment.
+    para = (
+        "The Bull thesis is X, Y, and Z "
+        "The Skeptic's strongest rebuttal survives on supply concerns"
+    )
+    bull, reb = _split_bull_vs_skeptic(para)
+    assert bull is not None and reb is not None
+    assert bull.endswith(".")
+    assert reb.endswith(".")
+
+
+# ---------------------------------------------------------------------------
+# Fix C — multi-language summary rendering (ko / en / ja / zh)
+# ---------------------------------------------------------------------------
+
+
+def _make_clean_summary() -> "object":
+    from wise_investor.notify.summary import VerdictSummary
+
+    return VerdictSummary(
+        symbol="NVDA",
+        verdict="BUY",
+        conviction=4,
+        position_sizing="3-5% of equity allocation.",
+        bull_thesis="AI accelerator leadership is durable.",
+        top_rebuttal="Implied growth rate looks unsustainable.",
+        has_economist=True,
+        has_skeptic=True,
+        has_steward=True,
+    )
+
+
+def test_format_summary_english_uses_english_labels() -> None:
+    from wise_investor.notify.summary import format_summary
+
+    text = format_summary(_make_clean_summary(), lang="en")
+    assert "NVDA" in text
+    assert "BUY" in text
+    assert "conviction" in text.lower()
+    assert "4/5" in text
+    assert "Bull thesis" in text
+    assert "Skeptic rebuttal" in text
+    # No Korean labels should leak into the English output.
+    assert "판정" not in text
+    assert "확신도" not in text
+
+
+def test_format_summary_japanese_uses_japanese_labels() -> None:
+    from wise_investor.notify.summary import format_summary
+
+    text = format_summary(_make_clean_summary(), lang="ja")
+    assert "NVDA" in text
+    assert "買い" in text
+    assert "判定" in text
+    assert "確信度" in text
+    assert "4/5" in text
+    # English verdict token shouldn't replace the Japanese one.
+    assert "BUY" not in text
+
+
+def test_format_summary_chinese_uses_chinese_labels() -> None:
+    from wise_investor.notify.summary import format_summary
+
+    text = format_summary(_make_clean_summary(), lang="zh")
+    assert "NVDA" in text
+    assert "买入" in text
+    assert "判定" in text
+    assert "信心度" in text
+    assert "4/5" in text
+    assert "BUY" not in text
+
+
+def test_format_summary_unknown_lang_falls_back_to_korean() -> None:
+    """A typo like 'kr' or 'jp' should not crash the push. Fall back to Korean."""
+    from wise_investor.notify.summary import format_summary
+
+    text = format_summary(_make_clean_summary(), lang="kr")  # typo
+    # Korean label shows up in the fallback rendering.
+    assert "판정" in text
+
+
+def test_supported_languages_exposes_all_four() -> None:
+    from wise_investor.notify.summary import SUPPORTED_LANGUAGES
+
+    assert set(SUPPORTED_LANGUAGES) == {"ko", "en", "ja", "zh"}
+
+
+def test_user_language_default_is_korean() -> None:
+    """Default user_language in Settings is 'ko' so existing deployments
+    see no behavior change after the upgrade.
+    """
+    from wise_investor.config import Settings
+
+    s = Settings()
+    assert s.user_language == "ko"
+
+
+

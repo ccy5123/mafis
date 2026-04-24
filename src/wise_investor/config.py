@@ -45,6 +45,17 @@ class Settings(BaseSettings):
         default="", description="Telegram chat_id (yours, or a group's)"
     )
 
+    # User-facing language for the Telegram summary + attached .md
+    # report. Supported: ko / en / ja / zh. The summary renderer uses
+    # a deterministic locale pack; the attached .md is translated via
+    # the Ollama-based translator (wise_investor.translation).
+    # Invalid values silently fall back to the Korean renderer so a
+    # typo in .env doesn't break a crew run.
+    user_language: str = Field(
+        default="ko",
+        description="User-facing language (ko/en/ja/zh). Default ko.",
+    )
+
     ollama_host: str = Field(default="http://localhost:11434")
     analyst_model: str = Field(default="llama3.1:8b")
     valuer_model: str = Field(default="llama3.1:8b")
