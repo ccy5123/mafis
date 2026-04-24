@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     fred_api_key: str = Field(
         default="", description="FRED API key (macro context for Economist agent)"
     )
+    dart_api_key: str = Field(
+        default="",
+        description=(
+            "OpenDART API key (Korean financials, opendart.fss.or.kr). "
+            "Register for free at opendart.fss.or.kr/mngInfo/mngInfoMain.do"
+        ),
+    )
 
     # Telegram notification (Phase 3B) — optional. If either is empty
     # the notifier no-ops silently so developers running without a bot
