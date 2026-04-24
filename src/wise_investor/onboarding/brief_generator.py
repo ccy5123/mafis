@@ -168,8 +168,34 @@ def build_brief_prompt(raw: RawMaterial) -> tuple[str, str]:
         "biased toward dependencies and vulnerabilities. Output only the "
         "brief markdown — no preamble, no commentary."
     )
+
+    korean_note = ""
+    if (raw.edgar_filing_date or "").startswith("(DART"):
+        korean_note = (
+            "\n\n=== Korean-listing caveat ===\n\n"
+            "This ticker is a KRX-listed company. The inputs above are "
+            "financial aggregates from DART's fnlttSinglAcntAll endpoint — "
+            "NOT a Business / Risk-Factors narrative like a US 10-K "
+            "provides. Implications for YOUR draft:\n"
+            "  - Upstream suppliers: DO NOT list suppliers unless they "
+            "appear by NAME in the inputs. If none are named, use a "
+            "single bullet '(not derivable from DART financials — human "
+            "reviewer must fill)'.\n"
+            "  - Peers: DART does NOT provide a peer list. Treat any "
+            "peer name you consider emitting as requiring a "
+            "`[?UNCERTAIN]` prefix — the human will validate the peer "
+            "cohort manually.\n"
+            "  - Do NOT claim the target depends on TSMC / Intel / other "
+            "US-scene companies purely from pretraining memory. If the "
+            "relationship is not in the inputs, omit it.\n"
+            "  - Known unknowns section SHOULD include 'Precise supplier "
+            "list (DART financial statements do not enumerate upstream "
+            "vendors)' as an explicit bullet."
+        )
+
     user = (
         raw.as_prompt_context()
+        + korean_note
         + "\n\n=== Brief template + rules ===\n\n"
         + BRIEF_TEMPLATE.format(
             symbol=raw.symbol,
@@ -185,11 +211,62 @@ def gather_raw_material(symbol: str) -> RawMaterial:
     Fails soft per source — each empty / error source is recorded as an
     empty field on RawMaterial so the LLM can still draft a reduced
     brief and the human reviewer can tell what was missing.
+
+    Dispatches on symbol shape: Korean tickers (6-digit KRX codes)
+    pull from OpenDART; everything else from Finnhub + SEC EDGAR.
     """
     symbol = symbol.upper()
     raw = RawMaterial(symbol=symbol, company_name=None, industry=None)
 
-    # Finnhub profile + peers
+    # Korean-ticker fast path: DART for company profile + a compressed
+    # view of the annual financials as a Business "excerpt" substitute.
+    # SEC EDGAR obviously has nothing for KRX companies.
+    from wise_investor.data.dart_facts import is_korean_ticker
+    if is_korean_ticker(symbol):
+        try:
+            from wise_investor.data.dart import DartClient
+            from wise_investor.data.dart_facts import (
+                normalize_korean_symbol,
+                pre_gather_dart_facts,
+            )
+
+            with DartClient() as client:
+                stock_code = normalize_korean_symbol(symbol)
+                corp_code = client.corp_code_from_stock_code(stock_code)
+                if corp_code:
+                    mappings = client.load_corp_mapping()
+                    entry = next(
+                        (m for m in mappings if m.stock_code == stock_code),
+                        None,
+                    )
+                    raw.company_name = entry.corp_name if entry else None
+                    raw.industry = "(Korean listing; DART does not classify)"
+
+            # Use the same DART facts adapter the crew pre-gather
+            # uses — render each account value as a line. This gives
+            # the LLM enough numerical context to draft the brief.
+            dart_facts = pre_gather_dart_facts(stock_code)
+            financial_lines = "\n".join(
+                f"- {key}: {value}"
+                for key, value in dart_facts.items()
+                if key.startswith("dart.") and not value.startswith("ERROR")
+            )
+            if financial_lines:
+                raw.edgar_filing_date = "(DART annual filing)"
+                raw.edgar_business_excerpt = (
+                    "[DART-sourced; SEC 10-K unavailable for Korean listings]\n"
+                    + financial_lines
+                )
+        except Exception as e:
+            logger.warning("DART gather failed for %s: %s", symbol, e)
+
+        # Peers: DART doesn't expose a peer list. Leave empty; the
+        # LLM will be instructed to mark them [?UNCERTAIN] and the
+        # human reviewer adds a Peer Override list.
+        _attach_geopolitics(raw, symbol)
+        return raw
+
+    # US path — original Finnhub + SEC EDGAR flow.
     try:
         from wise_investor.data.finnhub import FinnhubClient
 
@@ -239,8 +316,14 @@ def gather_raw_material(symbol: str) -> RawMaterial:
     except Exception as e:
         logger.warning("10-K RAG gather failed for %s: %s", symbol, e)
 
-    # Geopolitical snapshot — skip if slow or unreachable (user's
-    # onboarding experience shouldn't wait on GDELT timeouts).
+    _attach_geopolitics(raw, symbol)
+    return raw
+
+
+def _attach_geopolitics(raw: RawMaterial, symbol: str) -> None:
+    """Best-effort geopolitical snapshot. Failure (e.g., GDELT timeout)
+    leaves raw.geo_snapshot empty rather than aborting onboarding.
+    """
     try:
         from wise_investor.geopolitics.snapshot import (
             format_geopolitics_snapshot,
@@ -251,8 +334,6 @@ def gather_raw_material(symbol: str) -> RawMaterial:
         raw.geo_snapshot = format_geopolitics_snapshot(snap)
     except Exception as e:
         logger.warning("geopolitics snapshot failed for %s: %s", symbol, e)
-
-    return raw
 
 
 def _passages_to_block(section: Any) -> str:
@@ -290,11 +371,24 @@ def generate_value_chain_draft(
 
     body = llm_call(system, user).strip()
 
+    # Source line adapts to the data path actually used. Korean tickers
+    # don't have a SEC 10-K; the filing_date field stores a placeholder
+    # like "(DART annual filing)" which should be rendered verbatim.
+    source_bits: list[str] = []
+    if raw.edgar_filing_date and raw.edgar_filing_date.startswith("(DART"):
+        source_bits.append(f"DART {raw.edgar_filing_date}")
+    elif raw.edgar_filing_date:
+        source_bits.append(f"SEC 10-K filed {raw.edgar_filing_date}")
+    if raw.company_name is not None:
+        source_bits.append("Finnhub/DART profile")
+    source_bits.append("GDELT + Google News")
+    source_line = "Source: " + " + ".join(source_bits)
+
     header = [
         f"# {raw.symbol} — Value Chain Brief (auto-drafted)",
         "",
         f"Generated: {dt.datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        f"Source: Finnhub + SEC 10-K ({raw.edgar_filing_date or 'n/a'}) + GDELT/Google News",
+        source_line,
         "",
         DRAFT_BANNER,
         "",

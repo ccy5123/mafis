@@ -102,6 +102,150 @@ def test_generate_draft_wraps_llm_output_with_banner() -> None:
     assert "2026-02-25" in out
 
 
+def test_gather_raw_material_dispatches_korean_to_dart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Korean tickers MUST NOT hit the Finnhub / SEC EDGAR code paths
+    (which have no data on KRX listings). Verified by stubbing both
+    Finnhub and EDGAR to raise if called, and the DART facts adapter
+    to return a sentinel dict.
+    """
+    import wise_investor.onboarding.brief_generator as bg_mod
+    import wise_investor.data.dart_facts as dart_facts_mod
+
+    # Finnhub / EDGAR must NOT be invoked for Korean symbols.
+    class _UnreachableFinnhub:
+        def __enter__(self):
+            raise AssertionError("Finnhub path fired for Korean ticker")
+
+        def __exit__(self, *a):
+            pass
+
+    import wise_investor.data.finnhub as finnhub_mod
+
+    monkeypatch.setattr(finnhub_mod, "FinnhubClient", _UnreachableFinnhub)
+
+    import wise_investor.rag.integration as rag_mod
+
+    def _boom_rag(symbol):
+        raise AssertionError("EDGAR path fired for Korean ticker")
+
+    monkeypatch.setattr(rag_mod, "ensure_10k_indexed", _boom_rag)
+
+    # Stub DART client + adapter.
+    class _StubDart:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def corp_code_from_stock_code(self, code):
+            return "00126380"
+
+        def load_corp_mapping(self):
+            from wise_investor.data.dart import CorpMapping
+
+            return [
+                CorpMapping(
+                    corp_code="00126380",
+                    corp_name="삼성전자",
+                    stock_code="005930",
+                    modify_date="20260401",
+                )
+            ]
+
+        def close(self):
+            pass
+
+    import wise_investor.data.dart as dart_mod
+
+    monkeypatch.setattr(dart_mod, "DartClient", lambda *a, **k: _StubDart())
+
+    monkeypatch.setattr(
+        dart_facts_mod,
+        "pre_gather_dart_facts",
+        lambda code: {
+            "dart.metadata": "Symbol: 005930 / Name: 삼성전자",
+            "dart.revenue": "revenue: 300T KRW",
+        },
+    )
+
+    # Skip geopolitics (noisy; not under test here).
+    monkeypatch.setattr(bg_mod, "_attach_geopolitics", lambda raw, sym: None)
+
+    raw = bg_mod.gather_raw_material("005930")
+    assert raw.symbol == "005930"
+    assert raw.company_name == "삼성전자"
+    assert "Korean listing" in (raw.industry or "")
+    # DART financial lines end up in the business excerpt.
+    assert "revenue: 300T KRW" in raw.edgar_business_excerpt
+    assert raw.edgar_filing_date == "(DART annual filing)"
+
+
+def test_build_brief_prompt_adds_korean_caveat_for_dart_source() -> None:
+    """When the input signals DART (filing_date placeholder), the
+    prompt MUST include the Korean-listing caveat so the LLM doesn't
+    hallucinate US-based suppliers from pretraining memory.
+    """
+    raw = RawMaterial(
+        symbol="005930",
+        company_name="삼성전자",
+        industry="(Korean listing; DART does not classify)",
+        edgar_filing_date="(DART annual filing)",
+        edgar_business_excerpt="[DART-sourced] revenue: 300T KRW",
+    )
+    _, user = build_brief_prompt(raw)
+    assert "Korean-listing caveat" in user
+    assert "DO NOT list suppliers" in user
+    assert "DART" in user
+
+
+def test_build_brief_prompt_no_korean_caveat_for_us_ticker() -> None:
+    raw = RawMaterial(
+        symbol="NVDA",
+        company_name="NVIDIA",
+        industry="Semiconductors",
+        edgar_filing_date="2026-02-25",  # real ISO date
+    )
+    _, user = build_brief_prompt(raw)
+    assert "Korean-listing caveat" not in user
+
+
+def test_generate_draft_source_line_korean() -> None:
+    """Korean-path header should say 'DART ...' not 'SEC 10-K ((...))'."""
+    raw = RawMaterial(
+        symbol="005930",
+        company_name="삼성전자",
+        industry="(Korean listing; DART does not classify)",
+        edgar_filing_date="(DART annual filing)",
+    )
+
+    def _stub(system, user):
+        return "## Peer Override\n- (none)\n"
+
+    out = generate_value_chain_draft("005930", raw=raw, llm_call=_stub)
+    assert "DART" in out
+    # No double-paren regression.
+    assert "((DART" not in out
+    assert "SEC 10-K (" not in out
+
+
+def test_generate_draft_source_line_us_ticker() -> None:
+    raw = RawMaterial(
+        symbol="NVDA",
+        company_name="NVIDIA",
+        industry="Semiconductors",
+        edgar_filing_date="2026-02-25",
+    )
+
+    def _stub(system, user):
+        return "## Peer Override\n- (none)\n"
+
+    out = generate_value_chain_draft("NVDA", raw=raw, llm_call=_stub)
+    assert "SEC 10-K filed 2026-02-25" in out
+
+
 def test_generate_draft_passes_raw_material_to_llm() -> None:
     raw = RawMaterial(
         symbol="AMD",
