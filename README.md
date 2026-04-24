@@ -1,112 +1,297 @@
-# Wise Investor System
+# MAFIS — Wise Investor System
 
-장기 펀더멘털 투자 분석을 위한 로컬-우선 멀티 에이전트 시스템.
+**Local-first, multi-agent equity research crew** for long-term
+fundamental investment decisions. Runs entirely on your machine; no
+cloud LLM API spend.
 
-설계 문서: [design-v2.2.md](design-v2.2.md)
+Design doc: [design-v2.2.md](design-v2.2.md)
+Formal MVP evaluation: [docs/MVP_EVALUATION.md](docs/MVP_EVALUATION.md)
 
-## 현재 단계: Phase 0 — 스캐폴드 + 환경 검증
+---
 
-## 사전 요구사항
+## What it does
 
-- Python 3.12 이상
-- Ollama (로컬 LLM 실행) — [ollama.com](https://ollama.com/)
-- FMP API 키 (무료) — [Financial Modeling Prep](https://site.financialmodelingprep.com/)
+Feed a ticker in. A 6-agent crew produces a cited research note in
+~15–20 minutes:
 
-## 셋업
-
-### 1. Ollama 설치 및 모델 다운로드
-
-```bash
-# WSL Ubuntu
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 서비스 시작
-ollama serve &
-
-# 모델 pull (Phase 1에서 사용)
-ollama pull llama3.1:8b      # Analyst, Valuer
-ollama pull qwen2.5:7b       # Skeptic (로컬 모델 다양성)
+```
+Economist → Analyst → Valuer → Skeptic → Defender → Steward
+                                          │           │
+                          (debate round) ─┘           └─ BUY / HOLD / PASS + conviction
 ```
 
-### 2. FMP API 키 발급
+Every number in the report traces to a Python-computed source
+(Finnhub/FRED/DART/SEC EDGAR). A deterministic Python audit downgrades
+any verdict that violates the discipline matrix — the LLM can't
+overclaim. A separate citation-grounding audit flags any `[Source:
+edgar.*]` citation whose number doesn't actually appear in the
+retrieved 10-K passage.
 
-1. [site.financialmodelingprep.com](https://site.financialmodelingprep.com/) 회원가입
-2. 대시보드에서 API 키 복사
-3. `.env.example`을 `.env`로 복사 후 `FMP_API_KEY`에 붙여넣기
+Supported markets:
+- **US equities** via Finnhub + SEC EDGAR (via direct ChromaDB RAG)
+- **Korean equities** via OpenDART (KRX 6-digit codes; `.KS` / `.KQ`
+  suffixes stripped automatically)
 
-### 3. Python 환경 구축 (uv 권장)
+---
+
+## Current state (Phases 1–4)
+
+| Phase | Status | What's in it |
+|-------|--------|--------------|
+| Phase 1 MVP | ✅ Complete | 5 agents + quality metrics + reproducibility (`temperature=0`, `seed=42`) — formal GO verdict |
+| Phase 2 | ✅ 98% | Economist + Steward + Defender + debate round + 3-layer audit + portfolio SQLite + auto-onboarding |
+| Phase 3 | ✅ 98% | 3-Tier registry + SEC EDGAR RAG + DART + chain alerts + pre-filter stages 1–3 + dedup ledger |
+| Phase 4 | 🟡 75% | Paper trading ledger + auto-record on crew completion + regression-diff tool |
+
+**475 tests pass, 0 skipped offline.**
+
+---
+
+## Setup
+
+### Requirements
+
+- Python 3.13+
+- [Ollama](https://ollama.com/) running locally
+- Finnhub API key (free; [finnhub.io](https://finnhub.io/))
+- FRED API key (free; [fredaccount.stlouisfed.org](https://fredaccount.stlouisfed.org/apikeys))
+- OpenDART API key (free, for Korean stocks; [opendart.fss.or.kr](https://opendart.fss.or.kr/mngInfo/mngInfoMain.do))
+- Telegram bot (optional, for push notifications)
+
+### 1. Install Ollama + models
 
 ```bash
-# uv 설치 (없을 경우)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve &
 
-# 프로젝트 의존성 설치
+# 16k context variants used by the crew
+ollama pull qwen2.5:7b-16k
+ollama pull llama3.1:8b-16k
+```
+
+### 2. Configure `.env`
+
+Copy `.env.example` to `.env` and fill in:
+
+```bash
+FINNHUB_API_KEY=...
+FRED_API_KEY=...
+DART_API_KEY=...              # required only for Korean tickers
+TELEGRAM_BOT_TOKEN=...        # optional
+TELEGRAM_CHAT_ID=...          # optional
+```
+
+### 3. Python env
+
+```bash
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
 ```
 
-또는 pip 사용:
+### 4. Verify
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+python scripts/verify_env.py      # API keys + Ollama reachable
+pytest                            # should report 475 passed
 ```
 
-### 4. 환경 검증
+---
+
+## Daily workflow
+
+### Add a new ticker (60-min hand-authoring → 3-min auto-draft)
 
 ```bash
-python scripts/verify_env.py
+python scripts/onboard_ticker.py AMD --tier 2 --notes "GPU peer of NVDA"
 ```
 
-모든 항목이 OK로 나오면 Phase 1A로 진입.
+This pulls Finnhub profile + peers, downloads the latest 10-K,
+indexes it into ChromaDB, drafts a value chain brief via Qwen, and
+registers the ticker in `config/tickers.yaml`. Output:
+`docs/value_chains/AMD.draft.md` — review the **Vulnerable links**
+section, then:
 
-## 디렉토리 구조
-
-```
-MAFIS/
-├── design-v2.2.md          # 설계 문서
-├── pyproject.toml
-├── src/wise_investor/
-│   ├── config.py           # 환경 설정 (재현성 포함)
-│   ├── tools/              # Python 계산 도구 (Phase 1A)
-│   ├── agents/             # CrewAI 에이전트 (Phase 1B)
-│   ├── data/               # FMP/yfinance 클라이언트 (Phase 1A)
-│   └── rag/                # ChromaDB 인터페이스 (Phase 1B+)
-├── scripts/verify_env.py   # 환경 점검
-├── tests/                  # pytest
-└── docs/value_chains/      # 수동 밸류체인 Markdown
+```bash
+mv docs/value_chains/AMD.draft.md docs/value_chains/AMD.md
 ```
 
-## Phase 1 로드맵
+Korean tickers work the same way — the dispatcher detects 6-digit
+codes and routes through DART:
 
-설계 문서 §10.2 참조. 현재 위치는 Phase 0 (스캐폴드).
+```bash
+python scripts/onboard_ticker.py 005930 --tier 1  # Samsung Electronics
+```
 
-- Phase 0: 프로젝트 스캐폴드 + 환경 검증 (1~2일)
-- Phase 1A: Python 계산 도구 + 데이터 수집 (1주)
-- Phase 1B: Analyst 에이전트 첫 실행 (1주)
-- Phase 1C: Valuer + Skeptic + 순차 큐 (1~2주)
-- Phase 1D: 품질 지표 + 보고서 + 4대 평가 (2~3주)
+### Run the full crew
 
-## 핵심 원칙
+```bash
+python scripts/run_crew.py NVDA                   # US
+python scripts/run_crew.py 005930                 # Korean
+```
 
-- **로컬 우선, API 최후**: Phase 1은 외부 LLM API 비용 0원
-- **LLM은 판단, Python은 계산**: 수치는 `src/wise_investor/tools/`가, 해석은 LLM이
-- **재현성**: `temperature=0`, `seed=42` 기본값
+Output:
+- `reports/<SYMBOL>_YYYYMMDD_HHMM.crew.md` — six-section report +
+  audit block
+- `reports/<SYMBOL>_...meta.txt` — timing / char counts / models used
+- Auto-inserted row in `data/portfolio.sqlite` paper-trades table
+- Optional Telegram push of the Korean summary
 
-## Telegram 알림 (선택)
+### Inspect the portfolio
 
-Tier 1 리포트가 완성되면 한국어 요약이 텔레그램으로 푸시됩니다.
+```bash
+python scripts/portfolio_cli.py add NVDA --shares 10 --cost 5000 --tier 1
+python scripts/portfolio_cli.py weights                  # live Finnhub quotes
+python scripts/portfolio_cli.py gap NVDA --low 3 --high 5
+```
 
-1. 텔레그램 `@BotFather`에 `/newbot` → 이름/유저네임 설정 → 토큰 복사
-2. 본인 봇에 아무 메시지나 한 번 보내기 (채팅 생성)
-3. `https://api.telegram.org/bot<TOKEN>/getUpdates` 접속 → 응답에서 `chat.id` 복사
-4. `.env`에 추가:
+### Track paper-trade P&L over time
+
+```bash
+python scripts/paper_ledger.py list                      # all recorded verdicts
+python scripts/paper_ledger.py returns                   # mark-to-market
+python scripts/paper_ledger.py summary                   # win rate, audit effect
+```
+
+### Monitor news → chain alerts
+
+```bash
+# One-off scan (prints alerts; won't fire duplicates when --dedup)
+python scripts/scan_chain_alerts.py --dedup --hops 2
+
+# Cron-friendly (with Telegram push)
+0 9-16 * * 1-5  cd ~/MAFIS && /path/to/.venv/bin/python \
+    scripts/scan_chain_alerts.py --dedup --telegram \
+    >> /var/log/mafis_alerts.log 2>&1
+```
+
+### Promote Tier 3 → Tier 2 based on news activity
+
+```bash
+python scripts/prefilter_scan.py --graph-context --semantic
+```
+
+Runs Stages 1 (keyword), 2 (value-chain context), and 3 (Qwen
+materiality filter) against the news pool and recommends promotions.
+
+### Validate prompt / model tweaks didn't regress quality
+
+```bash
+python scripts/regression_compare.py \
+    reports/NVDA_20260424_1557.crew.md \
+    reports/NVDA_20260425_0900.crew.md \
+    --fail-on-regression
+```
+
+---
+
+## Architecture
+
+```
+src/wise_investor/
+├── agents/                  # crew: analyst, valuer, skeptic, defender, steward, economist
+│   ├── steward_audit.py     # discipline matrix + speculative-language + Defender-aware
+│   └── runner.py            # pre_gather_facts dispatcher (US → Finnhub, KR → DART)
+├── data/
+│   ├── finnhub.py           # US fundamentals
+│   ├── dart.py              # Korean fundamentals (OpenDART)
+│   ├── dart_facts.py        # KR → crew facts adapter (KRW→USD via FRED)
+│   ├── fred.py              # macro snapshot (Economist)
+│   └── cross_validate.py
+├── rag/
+│   ├── edgar.py             # SEC EDGAR downloader + cache
+│   ├── sections.py          # Business / Risk Factors / MD&A / Quant Market Risk extractor
+│   ├── index.py             # ChromaDB persistent store
+│   └── integration.py       # crew pre_gather hook
+├── geopolitics/
+│   ├── gdelt.py             # GDELT DOC 2.0 client
+│   ├── google_news.py       # RSS parser
+│   └── snapshot.py          # per-symbol geopolitical context
+├── alerts/
+│   ├── chain_alerts.py      # value-chain graph × news → target alerts
+│   └── ledger.py            # SQLite dedup + cooldown
+├── filters/
+│   ├── pre_filter.py        # Stages 1 (keyword) + 2 (graph context)
+│   └── semantic.py          # Stage 3 Qwen materiality filter
+├── onboarding/
+│   ├── brief_generator.py   # Finnhub + 10-K + geo → Qwen-drafted value chain brief
+│   └── tickers_yaml.py      # 3-Tier registry CRUD
+├── portfolio/
+│   └── store.py             # positions + sizing-gap helper
+├── paper_trading/
+│   ├── ledger.py            # paper_trades table + performance metrics
+│   └── report_parser.py     # parse Steward verdict + audit flag from crew report
+├── regression/
+│   └── compare.py           # structured crew-report diff tool
+├── value_chain/
+│   ├── graph.py             # NetworkX-backed typed DiGraph
+│   └── parser.py            # docs/value_chains/*.md → graph
+├── quality/
+│   ├── metrics.py           # 6 automated quality scores
+│   └── citation_audit.py    # edgar.* grounding + Skeptic mandate audit
+└── notify/
+    └── telegram.py
+
+scripts/                     # CLI entry points for every component above
+docs/value_chains/           # hand-curated + auto-drafted briefs (*.md vs *.draft.md)
+data/                        # portfolio.sqlite, chroma/, edgar_cache/, facts_cache/
+tests/                       # 475 tests
+```
+
+---
+
+## Core principles
+
+- **Local-first, API-last**: Phase 1 runs with $0 LLM spend. Finnhub /
+  FRED / GDELT / DART are free public APIs.
+- **LLM is judgment, Python is calculation**: every dollar value, ratio,
+  and growth rate is computed by `src/wise_investor/tools/` or `data/`
+  and fed to the LLM as prepared facts. The LLM synthesizes narrative,
+  never arithmetic.
+- **Reproducibility**: `temperature=0`, `seed=42` → byte-identical
+  agent outputs across runs on the same facts cache.
+- **Multi-layer audit**: discipline matrix (verdict vs labels) +
+  speculative-language detector + Defender-aware correction + edgar
+  citation grounding + Skeptic mandate compliance. The LLM can emit
+  any narrative; Python enforces the rules.
+- **Paper trading before real trading**: every Steward verdict is
+  automatically recorded with entry price. `paper_ledger.py summary`
+  tells you whether BUY verdicts actually outperform PASS verdicts
+  over time — the only objective answer to "is this system useful?".
+
+---
+
+## Telegram push (optional)
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) → copy the
+   token.
+2. Send any message to your bot (creates the chat).
+3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` → copy the
+   `chat.id`.
+4. Add to `.env`:
    ```
-   TELEGRAM_BOT_TOKEN=<1단계 토큰>
-   TELEGRAM_CHAT_ID=<3단계 chat id>
+   TELEGRAM_BOT_TOKEN=...
+   TELEGRAM_CHAT_ID=...
    ```
-5. `scripts/run_crew.py <TICKER>` 또는 `scripts/daily_run.py` 실행 후 자동 알림 수신
+5. `run_crew.py` auto-pushes a Korean summary; `scan_chain_alerts.py
+   --telegram` pushes chain alerts.
 
-설정하지 않으면 조용히 건너뜀 (에러 없음).
+No configuration → silent skip, no errors.
+
+---
+
+## Limitations
+
+- Korean-ticker crew runs share the English agent prompts; the
+  Analyst will produce English analysis of Korean financials. A
+  follow-up will branch the prompts by source country.
+- Value chain graph auto-update from 10-K text is not yet
+  implemented. Briefs are either hand-curated or onboarding-
+  drafted and then hand-reviewed.
+- No paper-trade position sizing — the ledger records Steward
+  verdicts only; actual position sizing per trade is manual.
+- No OpenClaw integration (design §8.1); Telegram covers the
+  equivalent role.
+
+See [docs/MVP_EVALUATION.md](docs/MVP_EVALUATION.md) for the
+Phase 1 formal evaluation and Phase 2+ priorities.
