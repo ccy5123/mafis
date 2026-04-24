@@ -607,6 +607,63 @@ Conviction: 4
     assert r.corrected_verdict == "HOLD"
 
 
+def test_audit_of_steward_text_alone_misses_defender_violation() -> None:
+    """Regression guard for a production bug discovered 2026-04-24
+    (commit d622d01 timeframe).
+
+    run_crew_synthesis originally called audit_steward_section with
+    just `steward_text` — no Defender context. For the common failure
+    pattern (Steward writes a single NEUTRALIZED label, Defender says
+    0 DEFENDED / 1 CONCEDED), that view sees N=1 S=0 → the matrix
+    permits BUY and the audit does NOT fire. The paper-trading
+    ledger re-audits the full combined markdown and DOES catch it,
+    which leaves the two artefacts (report file vs. paper-trades
+    row) inconsistent.
+
+    The fix: the runner now prefixes the Defender section to the
+    audit input. This test documents the before/after behaviour
+    with the same fixture.
+    """
+    steward_only = '''\
+## Verdict
+BUY
+
+## Conviction Level
+Conviction: 4
+
+## Rationale
+**NEUTRALIZED**: Defender said no concrete evidence.
+'''
+
+    # With Steward-only input the Defender-aware path is blind;
+    # matrix reads N=1, S=0 → BUY allowed, no violation.
+    r1 = audit_steward_section(steward_only)
+    assert r1.defender_present is False
+    assert r1.violation is False
+
+    # With Defender + Steward combined (what the patched runner
+    # now builds), the same Steward text is correctly downgraded.
+    combined = '''\
+# Part 5 · Defender
+
+### Response to Skeptic #1
+**Label:** CONCEDED
+Evidence: no concrete figure.
+
+**Tally:** 0 DEFENDED, 1 CONCEDED
+
+---
+
+# Part 6 · Steward
+''' + steward_only
+    r2 = audit_steward_section(combined)
+    assert r2.defender_present is True
+    assert r2.defender_defended_count == 0
+    assert r2.defender_conceded_count == 1
+    assert r2.violation is True
+    assert r2.corrected_verdict == "PASS"
+
+
 def test_matrix_zero_survived_allows_buy() -> None:
     text = """\
 # Part 5 · Defender

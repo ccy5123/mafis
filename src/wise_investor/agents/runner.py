@@ -1073,16 +1073,36 @@ def run_crew_synthesis(
     # This check parses the labels deterministically and appends a System
     # Audit note when the verdict is too optimistic. Narrative is left
     # verbatim; only the appended note carries the corrected verdict.
+    #
+    # CRITICAL: feed the audit a document that INCLUDES the Defender
+    # section. The Defender-aware audit path only fires when it can
+    # find `# Part N · Defender` in the input; passing only
+    # `steward_text` hides the Defender labels and collapses the audit
+    # to Steward's self-reporting (which is exactly the failure mode
+    # we shipped the audit to prevent — see commit 04b4c0a).
     from wise_investor.agents.steward_audit import (
         audit_steward_section,
         apply_audit_to_section,
     )
-    audit = audit_steward_section(steward_text)
+    steward_text_for_audit = steward_text
+    if defender_text:
+        # Give the audit enough context to find the Defender heading.
+        # The Part number ("Part 5") only needs to match the regex
+        # `# Part \d+ · Defender`, so the exact value is unimportant.
+        steward_text_for_audit = (
+            "# Part 5 · Defender\n\n"
+            + defender_text
+            + "\n\n---\n\n# Part 6 · Steward\n\n"
+            + steward_text
+        )
+    audit = audit_steward_section(steward_text_for_audit)
     if audit.violation:
         log(
             f"[crew] Steward AUDIT VIOLATION: {audit.verdict} C{audit.conviction} "
             f"→ {audit.corrected_verdict} C{audit.corrected_conviction} "
-            f"(N={audit.neutralized_count}, S={audit.survived_count})"
+            f"(N={audit.neutralized_count}, S={audit.survived_count}, "
+            f"defender={audit.defender_defended_count}D/{audit.defender_conceded_count}C, "
+            f"mistranslated={audit.steward_mistranslated})"
         )
         steward_text = apply_audit_to_section(steward_text, audit)
 
