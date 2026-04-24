@@ -565,6 +565,39 @@ def pre_gather_facts(symbol: str, use_cache: bool = True) -> dict[str, str]:
         logger.info("Loading cached facts from %s", cache_path)
         return json.loads(cache_path.read_text(encoding="utf-8"))
 
+    # Korean-ticker dispatch: detect 6-digit KRX codes (with or without
+    # .KS / .KQ suffix) and route to the DART facts builder instead of
+    # the Finnhub path. Output schema is intentionally compatible so the
+    # agents and quality metrics don't need to know which source
+    # supplied the numbers.
+    from wise_investor.data.dart_facts import (
+        is_korean_ticker,
+        pre_gather_dart_facts,
+    )
+    if is_korean_ticker(symbol):
+        logger.info("Korean ticker detected (%s); routing to DART.", symbol)
+        # Pull the FRED KRW/USD rate once so dollar equivalents are
+        # available. Fail-soft — if FRED is down, facts are KRW-only.
+        # Use the module-level `get_macro_snapshot` already imported
+        # at the top of this file (no local re-import to avoid Python
+        # treating the name as a function-local elsewhere in the
+        # function body).
+        usd_krw_rate: float | None = None
+        try:
+            snap = get_macro_snapshot()
+            if snap.usd_krw_rate and snap.usd_krw_rate.value:
+                usd_krw_rate = float(snap.usd_krw_rate.value)
+        except Exception as e:
+            logger.warning("FRED rate fetch failed: %s", e)
+
+        facts = pre_gather_dart_facts(symbol, usd_krw_rate=usd_krw_rate)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps(facts, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        logger.info("Saved DART facts to cache: %s", cache_path)
+        return facts
+
     peer_overrides = _load_peer_overrides_for(symbol)
     if peer_overrides:
         logger.info(
