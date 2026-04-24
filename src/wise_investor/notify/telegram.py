@@ -26,6 +26,37 @@ class TelegramError(RuntimeError):
     pass
 
 
+# Telegram hard limit per sendMessage request. Values over this are
+# rejected with HTTP 400 "message is too long". We chunk at a bit
+# under the cap to leave room for a trailing continuation hint.
+TELEGRAM_MAX_MESSAGE_LEN = 4096
+_CHUNK_SAFE_LEN = 3900
+
+
+def _chunk_text(text: str, limit: int = _CHUNK_SAFE_LEN) -> list[str]:
+    """Split a long message into Telegram-sized chunks, preferring
+    paragraph / line boundaries over mid-sentence breaks.
+    """
+    if len(text) <= limit:
+        return [text]
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining) > limit:
+        window = remaining[:limit]
+        # Prefer a double-newline split; fall back to single newline;
+        # last resort is a hard cut at `limit`.
+        cut = window.rfind("\n\n")
+        if cut < limit * 0.5:
+            cut = window.rfind("\n")
+        if cut < limit * 0.5:
+            cut = limit
+        chunks.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip()
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
 class TelegramNotifier:
     BASE_URL = "https://api.telegram.org"
 
@@ -57,6 +88,10 @@ class TelegramNotifier:
         """Send `text` to the configured chat. Returns True on success, False
         on skip (not configured) or API failure. Never raises — failures are
         logged and execution continues.
+
+        Automatically chunks messages over Telegram's 4096-char limit into
+        multiple sendMessage calls, preserving paragraph / line boundaries.
+        Returns True only if ALL chunks succeeded.
         """
         if not self.configured:
             logger.debug(
@@ -65,24 +100,42 @@ class TelegramNotifier:
             return False
 
         url = f"{self.BASE_URL}/bot{self.bot_token}/sendMessage"
-        payload: dict[str, object] = {
-            "chat_id": self.chat_id,
-            "text": text,
-            "disable_web_page_preview": disable_web_page_preview,
-        }
-        if parse_mode is not None:
-            payload["parse_mode"] = parse_mode
-        try:
-            r = httpx.post(url, json=payload, timeout=self.timeout)
-            if r.status_code >= 400:
+        chunks = _chunk_text(text)
+        if len(chunks) > 1:
+            logger.info(
+                "Telegram: splitting %d-char message into %d chunks",
+                len(text),
+                len(chunks),
+            )
+
+        for i, chunk in enumerate(chunks, start=1):
+            if len(chunks) > 1:
+                # Add a "(part i/N)" suffix so the reader knows more is coming.
+                chunk = f"{chunk}\n\n(part {i}/{len(chunks)})"
+            payload: dict[str, object] = {
+                "chat_id": self.chat_id,
+                "text": chunk,
+                "disable_web_page_preview": disable_web_page_preview,
+            }
+            if parse_mode is not None:
+                payload["parse_mode"] = parse_mode
+            try:
+                r = httpx.post(url, json=payload, timeout=self.timeout)
+                if r.status_code >= 400:
+                    logger.warning(
+                        "Telegram API %d on sendMessage (chunk %d/%d): %s",
+                        r.status_code,
+                        i,
+                        len(chunks),
+                        r.text[:200],
+                    )
+                    return False
+            except Exception as e:
                 logger.warning(
-                    "Telegram API %d on sendMessage: %s", r.status_code, r.text[:200]
+                    "Telegram send failed on chunk %d/%d: %s", i, len(chunks), e
                 )
                 return False
-            return True
-        except Exception as e:
-            logger.warning("Telegram send failed: %s", e)
-            return False
+        return True
 
 
 def push_if_configured(text: str) -> bool:

@@ -266,3 +266,62 @@ def test_telegram_notifier_send_silently_skips_when_unconfigured() -> None:
 def test_placeholder_token_treated_as_unconfigured() -> None:
     n = TelegramNotifier(bot_token="your_telegram_bot_token", chat_id="12345")
     assert n.configured is False
+
+
+# ---------------------------------------------------------------------------
+# Message chunking — 4096 char Telegram limit
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_text_short_message_single_chunk() -> None:
+    from wise_investor.notify.telegram import _chunk_text
+
+    chunks = _chunk_text("short message")
+    assert chunks == ["short message"]
+
+
+def test_chunk_text_long_message_splits_at_paragraph() -> None:
+    from wise_investor.notify.telegram import _chunk_text
+
+    # Build a message with clear paragraph boundaries that forces a split.
+    para = "A" * 1500
+    msg = para + "\n\n" + para + "\n\n" + para  # ~4506 chars
+    chunks = _chunk_text(msg)
+    assert len(chunks) >= 2
+    # Every chunk under the safe cap.
+    assert all(len(c) <= 3900 for c in chunks)
+    # Original content preserved (minus trimmed whitespace) when joined.
+    joined = " ".join(chunks).replace(" ", "")
+    assert joined.count("A") == 1500 * 3
+
+
+def test_chunk_text_falls_back_to_single_newline() -> None:
+    """Messages without \\n\\n but with \\n should still split cleanly."""
+    from wise_investor.notify.telegram import _chunk_text
+
+    line = "X" * 200
+    msg = ("\n".join([line] * 25))  # ~5024 chars, no blank lines
+    chunks = _chunk_text(msg)
+    assert len(chunks) >= 2
+    assert all(len(c) <= 3900 for c in chunks)
+
+
+def test_chunk_text_hard_cut_when_no_newlines() -> None:
+    """Worst case: one enormous line — hard-cut at the limit."""
+    from wise_investor.notify.telegram import _chunk_text
+
+    msg = "A" * 10000
+    chunks = _chunk_text(msg)
+    assert len(chunks) >= 2
+    assert all(len(c) <= 3900 for c in chunks)
+
+
+def test_chunk_text_limit_constant_matches_telegram() -> None:
+    from wise_investor.notify.telegram import (
+        TELEGRAM_MAX_MESSAGE_LEN,
+        _CHUNK_SAFE_LEN,
+    )
+
+    assert TELEGRAM_MAX_MESSAGE_LEN == 4096
+    # Safe cap leaves room for the "(part i/N)" suffix.
+    assert _CHUNK_SAFE_LEN < TELEGRAM_MAX_MESSAGE_LEN

@@ -155,13 +155,17 @@ def run(args: argparse.Namespace) -> int:
             from wise_investor.notify.telegram import TelegramNotifier
 
             notifier = TelegramNotifier()
-            if notifier.configured:
-                notifier.send(md)
-                console.print("[green]Pushed to Telegram[/green]")
-            else:
+            if not notifier.configured:
                 console.print(
                     "[yellow]Telegram not configured (set TELEGRAM_BOT_TOKEN + "
                     "TELEGRAM_CHAT_ID in .env).[/yellow]"
+                )
+            elif notifier.send(md):
+                console.print("[green]Pushed to Telegram[/green]")
+            else:
+                console.print(
+                    "[red]Telegram push failed — see logs for API error "
+                    "details.[/red]"
                 )
         except Exception as e:
             console.print(f"[red]Telegram push failed: {e}[/red]")
