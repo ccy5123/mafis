@@ -4,6 +4,12 @@
 fundamental investment decisions. Runs entirely on your machine; no
 cloud LLM API spend.
 
+**Usage guide**:
+[한국어](docs/usage/ko.md) ·
+[English](docs/usage/en.md) ·
+[日本語](docs/usage/ja.md) ·
+[简体中文](docs/usage/zh.md)
+
 Design doc: [design-v2.2.md](design-v2.2.md)
 Formal MVP evaluation: [docs/MVP_EVALUATION.md](docs/MVP_EVALUATION.md)
 
