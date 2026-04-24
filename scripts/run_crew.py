@@ -166,6 +166,57 @@ def run(symbol: str) -> int:
     console.print(f"Report: [cyan]{report_path}[/cyan]")
     console.print(f"Meta:   [dim]{meta_path}[/dim]")
 
+    # -- Paper-trading auto-record (Phase 4)
+    # Parse the Steward verdict (post-audit) and persist to the ledger
+    # so `scripts/paper_ledger.py summary` picks up this trade on the
+    # next invocation. Entry price pulled from Finnhub if the ticker
+    # is US-listed; Korean tickers skip the live-quote call here and
+    # the ledger row stores price_at_verdict=None (caller can backfill).
+    try:
+        from wise_investor.data.dart_facts import is_korean_ticker
+        from wise_investor.paper_trading.ledger import PaperTradeLedger
+        from wise_investor.paper_trading.report_parser import parse_crew_report
+
+        summary_for_ledger = parse_crew_report(
+            result.combined_markdown, symbol_hint=symbol
+        )
+        if summary_for_ledger.verdict is not None:
+            entry_price: float | None = None
+            if not is_korean_ticker(symbol):
+                try:
+                    from wise_investor.data.finnhub import FinnhubClient
+                    with FinnhubClient() as c:
+                        entry_price = c.quote(symbol).price
+                except Exception as e:
+                    console.print(
+                        f"[yellow]Entry price fetch failed: {e}[/yellow]"
+                    )
+
+            ledger = PaperTradeLedger()
+            trade = ledger.record_trade(
+                symbol=summary_for_ledger.symbol or symbol,
+                verdict=summary_for_ledger.verdict,
+                original_verdict=summary_for_ledger.original_verdict
+                    or summary_for_ledger.verdict,
+                conviction=summary_for_ledger.conviction,
+                original_conviction=summary_for_ledger.original_conviction,
+                audit_downgraded=summary_for_ledger.audit_downgraded,
+                price_at_verdict=entry_price,
+                report_path=str(report_path),
+            )
+            audit_flag = " (audit ↓)" if summary_for_ledger.audit_downgraded else ""
+            price_str = (
+                f"${entry_price:,.2f}" if entry_price is not None else "n/a"
+            )
+            console.print(
+                f"[cyan]📒 Paper trade #{trade.id} recorded:[/cyan] "
+                f"{trade.symbol} {trade.verdict} "
+                f"C{trade.conviction or '?'}"
+                f"{audit_flag} @ {price_str}"
+            )
+    except Exception as e:
+        console.print(f"[yellow]Paper trade record skipped: {e}[/yellow]")
+
     # -- Push Korean summary to Telegram if configured (no-op otherwise)
     notifier = TelegramNotifier()
     if notifier.configured:
