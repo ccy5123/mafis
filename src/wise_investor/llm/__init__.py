@@ -9,11 +9,14 @@ call `ollama.chat(...)` directly. Phase 5 migrates them onto this API.
 """
 
 from wise_investor.llm.base import LLMBackend, LLMResponse, SamplingConfig
+from wise_investor.llm.config import AgentConfig, get_agent_config
 from wise_investor.llm.factory import get_backend
 
 __all__ = [
+    "AgentConfig",
     "LLMBackend",
     "LLMResponse",
     "SamplingConfig",
+    "get_agent_config",
     "get_backend",
 ]

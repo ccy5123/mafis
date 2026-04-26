@@ -1,0 +1,67 @@
+# Per-agent model + sampling routing.
+#
+# Lookup precedence (most specific wins):
+#   1. agents.<name>.backends.<LLM_BACKEND>   — backend-specific override
+#   2. agents.<name>.model                    — shared across backends
+#   3. defaults.backends.<LLM_BACKEND>        — global backend override
+#   4. defaults.model                         — global default
+#   5. Legacy .env fallback (settings.analyst_model, valuer_model, …)
+#
+# Sampling follows the same pattern. A fully empty `sampling` block
+# means "use the model-family recommended values from
+# wise_investor.llm.utils.sampling" — that's the new policy for
+# every agent out of the box. Override only when you know what you're
+# doing (see docs/llm_backends.md, coming in Phase 7).
+#
+# This file is optional — delete it to revert to the .env-based
+# routing that predates Phase 4.
+
+defaults:
+  # Current MAFIS default model. Matches settings.analyst_model from
+  # .env so a git pull without a .env change keeps the current
+  # behavior (aside from sampling now following Qwen/Llama's published
+  # recommendations instead of temperature=0 + seed=42).
+  model: llama3.1:8b
+
+  # Uncomment to pin global sampling. Empty / missing means "use the
+  # model's recommended config". Deterministic mode example:
+  # sampling:
+  #   temperature: 0.0
+  #   seed: 42
+
+  # Per-backend model overrides — handy when switching LLM_BACKEND
+  # between Ollama and a hosted server that uses HuggingFace repo
+  # names for the same weights.
+  # backends:
+  #   openai_compat: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  #   mlx: "mlx-community/Llama-3.1-8B-Instruct-4bit"
+
+agents:
+  economist:
+    # Shares the defaults.model entry — historically this meant
+    # Economist ran on whichever model Analyst did (Qwen/Llama).
+  analyst:
+    # Also defaults.model — all fact-heavy agents share the same
+    # model so no swap penalty during a crew run.
+  valuer:
+    # Same. Keep aligned with Analyst for now.
+  skeptic:
+    # Bear-side diversity — use a genuinely different local model.
+    model: qwen2.5:7b
+    # Skeptic is the natural place to try thinking mode on a Qwen3
+    # or DeepSeek-R1 variant:
+    # model: qwen3:14b
+    # sampling:
+    #   enable_thinking: true
+  defender:
+    # Shares defaults.model so the Qwen-side can be re-used without
+    # a second swap into Llama.
+  steward:
+    # Final judge — historically pinned to Qwen for vocabulary
+    # consistency with Skeptic's attack framing.
+    model: qwen2.5:7b
+    # To run Steward deterministically while letting other agents
+    # sample freely, uncomment:
+    # sampling:
+    #   temperature: 0.0
+    #   seed: 42
