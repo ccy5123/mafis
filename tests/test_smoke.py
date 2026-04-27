@@ -11,12 +11,28 @@ def test_package_imports() -> None:
     assert wise_investor.__version__ == "0.1.0"
 
 
-def test_config_defaults_enforce_reproducibility() -> None:
-    """design-v2.2 re-review Critical #1: temperature=0, fixed seed."""
-    from wise_investor.config import settings
+def test_agent_sampling_follows_model_recommendation() -> None:
+    """Phase 5 policy shift: MAFIS no longer guarantees byte-identical
+    output across runs. Each agent gets the model-author-published
+    recommended sampling config (e.g. Qwen 2.5: temp=0.7 / top_p=0.8;
+    Qwen3 thinking: temp=0.6 / top_p=0.95 / min_p=0). Users who need
+    deterministic output for backtests can override via
+    `config/agent_models.yaml` per-agent — see docs/llm_backends.md.
 
-    assert settings.llm_temperature == 0.0, "temperature must be 0 for reproducibility"
-    assert settings.llm_seed == 42, "seed must be fixed for reproducibility"
+    This test asserts the new contract: every crew agent resolves to
+    a non-zero temperature with the model-family recommendation
+    applied.
+    """
+    from wise_investor.llm.config import get_agent_config
+
+    for agent in ("economist", "analyst", "valuer", "skeptic", "defender", "steward"):
+        cfg = get_agent_config(agent, backend="ollama")
+        assert cfg.model, f"{agent} did not resolve a model"
+        assert cfg.sampling.temperature > 0, (
+            f"{agent} sampling temperature must follow the model "
+            "recommendation, not the legacy temperature=0 contract"
+        )
+        assert cfg.sampling.top_p is not None or cfg.sampling.top_k is not None
 
 
 def test_model_assignment_matches_design() -> None:

@@ -1,8 +1,13 @@
 """The Analyst agent — Phase 1B MVP.
 
 Role: produce a fact-dense, source-cited fundamental assessment of a single
-company. Lives on Llama 3.1 8B via Ollama. Every number it cites must come
-from a tool call; nothing is inferred from memory (design-v2.2 §7.2).
+company. Every number it cites must come from a tool call; nothing is
+inferred from memory (design-v2.2 §7.2).
+
+Post-Phase-5 the model and sampling come from `config/agent_models.yaml`
+through the LLMBackend abstraction, not from .env directly. The default
+backend is still Ollama; users picking MLX / OpenAI-compat get the same
+agent wiring with their backend's CrewAI bridge.
 """
 
 from __future__ import annotations
@@ -10,22 +15,20 @@ from __future__ import annotations
 from crewai import LLM, Agent
 
 from wise_investor.agents.tools import ALL_TOOLS
-from wise_investor.config import settings
+from wise_investor.llm import get_agent_config, get_backend
 
 
 def make_analyst_llm() -> LLM:
-    """CrewAI LLM handle pointed at the local Ollama Analyst model.
+    """CrewAI LLM handle, routed through the active LLMBackend.
 
-    LiteLLM syntax for Ollama is 'ollama/<model-tag>'. Temperature and seed
-    are pinned to the values in config.py so runs are reproducible
-    (design-v2.2 re-review Critical #1).
+    The backend chooses the LiteLLM provider prefix (`ollama/` for
+    Ollama, `hosted_vllm/` for OpenAI-compat) and applies the
+    model-family recommended sampling config. Users override either
+    via `config/agent_models.yaml`.
     """
-    return LLM(
-        model=f"ollama/{settings.analyst_model}",
-        base_url=settings.ollama_host,
-        temperature=settings.llm_temperature,
-        seed=settings.llm_seed,
-    )
+    backend = get_backend()
+    cfg = get_agent_config("analyst", backend=backend.name)
+    return backend.make_crewai_llm(cfg.model, cfg.sampling)
 
 
 ANALYST_BACKSTORY = """\

@@ -29,7 +29,6 @@ import re
 from dataclasses import dataclass
 from typing import Callable
 
-from wise_investor.config import settings
 from wise_investor.filters.pre_filter import FilterHit
 
 
@@ -162,21 +161,26 @@ def materials_only(decisions: list[SemanticDecision]) -> list[FilterHit]:
 
 
 def _default_llm_call(system: str, user: str) -> str:
-    """Production Ollama call at temp 0, seed 42."""
-    import ollama
+    """Production LLM call routed through the active LLMBackend.
 
-    resp = ollama.chat(
-        model=settings.analyst_model,  # share Qwen with Analyst
+    Pulls model + sampling from `agents.semantic_filter` (or the
+    Analyst/defaults fallback) so users can pin a smaller / faster
+    model just for this binary classifier without touching the
+    other crew agents.
+    """
+    from wise_investor.llm import get_agent_config, get_backend
+
+    backend = get_backend()
+    cfg = get_agent_config("semantic_filter", backend=backend.name)
+    response = backend.chat(
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        options={
-            "temperature": settings.llm_temperature,
-            "seed": settings.llm_seed,
-        },
+        model=cfg.model,
+        sampling=cfg.sampling,
     )
-    return resp["message"]["content"]
+    return response.content
 
 
 __all__ = [

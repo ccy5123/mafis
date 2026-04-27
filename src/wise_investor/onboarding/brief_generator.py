@@ -30,8 +30,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from wise_investor.config import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -399,26 +397,25 @@ def generate_value_chain_draft(
 
 
 def _default_llm_call(system: str, user: str) -> str:
-    """Production default: Ollama Qwen 2.5 7B at temp 0, seed 42."""
-    try:
-        import ollama
-    except ImportError as e:
-        raise RuntimeError(
-            "ollama package not available — install with `pip install ollama`"
-        ) from e
+    """Production default: routed through the active LLMBackend.
 
-    resp = ollama.chat(
-        model=settings.analyst_model,
+    Resolves to `agents.brief_generator` from agent_models.yaml; if
+    that's unspecified the loader's legacy fallback gives us the
+    Analyst model — same model historically used by this generator.
+    """
+    from wise_investor.llm import get_agent_config, get_backend
+
+    backend = get_backend()
+    cfg = get_agent_config("brief_generator", backend=backend.name)
+    response = backend.chat(
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        options={
-            "temperature": settings.llm_temperature,
-            "seed": settings.llm_seed,
-        },
+        model=cfg.model,
+        sampling=cfg.sampling,
     )
-    return resp["message"]["content"]
+    return response.content
 
 
 __all__ = [

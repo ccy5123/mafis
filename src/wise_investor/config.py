@@ -1,7 +1,12 @@
 """Centralized configuration loaded from environment variables.
 
-See design-v2.2.md §7 for the "LLM is judgment, Python is calculation" principle
-and the re-review Critical #1 (reproducibility) that motivates temperature=0 + fixed seed.
+See design-v2.2.md §7 for the "LLM is judgment, Python is calculation"
+principle. The `llm_temperature` and `llm_seed` fields below are
+retained for backwards compatibility — they no longer drive the
+default sampling path (Phase 5 routes everything through
+`config/agent_models.yaml`), but tests and legacy deployments still
+read them, and users who explicitly want a deterministic profile
+can re-introduce them via the YAML's `sampling:` block.
 """
 
 from pathlib import Path
@@ -62,11 +67,22 @@ class Settings(BaseSettings):
     skeptic_model: str = Field(default="qwen2.5:7b")
     steward_model: str = Field(default="qwen2.5:7b")
 
+    # Phase 5: these fields are retained for backwards compatibility
+    # only. The active sampling path goes through config/agent_models.yaml
+    # via wise_investor.llm.config; see docs/llm_backends.md for how
+    # to re-enable deterministic output (per-agent override there).
     llm_temperature: float = Field(
         default=0.0,
-        description="Fixed at 0 for reproducibility. See design-v2.2 re-review Critical #1.",
+        description=(
+            "Legacy / unused on the default path. Per-agent sampling "
+            "now resolves via config/agent_models.yaml + the model-"
+            "family recommendation. Override there for deterministic mode."
+        ),
     )
-    llm_seed: int = Field(default=42, description="Fixed seed for LLM reproducibility.")
+    llm_seed: int = Field(
+        default=42,
+        description="Legacy / unused on the default path. See llm_temperature.",
+    )
 
     chroma_persist_dir: Path = Field(default=PROJECT_ROOT / "data" / "chroma")
     sqlite_path: Path = Field(default=PROJECT_ROOT / "data" / "portfolio.sqlite")

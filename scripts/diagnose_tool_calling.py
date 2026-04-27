@@ -115,6 +115,16 @@ def probe_openai_endpoint(model: str) -> None:
 
 
 if __name__ == "__main__":
-    for model in [settings.analyst_model, "llama3.1:8b-16k", "qwen2.5:7b"]:
-        probe_ollama_native(model)
-        probe_openai_endpoint(model)
+    # Probe whichever models are configured for the crew agents — no
+    # hardcoded names so this script keeps working when users switch
+    # to MLX / openai_compat / different Ollama tags via
+    # config/agent_models.yaml.
+    from wise_investor.llm import get_agent_config
+
+    seen: set[str] = set()
+    for agent in ("analyst", "skeptic", "steward"):
+        cfg = get_agent_config(agent, backend="ollama")
+        if cfg.model not in seen:
+            seen.add(cfg.model)
+            probe_ollama_native(cfg.model)
+            probe_openai_endpoint(cfg.model)

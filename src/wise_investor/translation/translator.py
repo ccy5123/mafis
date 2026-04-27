@@ -3,8 +3,10 @@
 The Telegram summary renderer has its own deterministic LOCALE pack
 (notify/summary.py — fixed vocabulary labels), but the attached .md
 file contains LLM-generated prose that needs actual translation.
-We use Ollama's Qwen 2.5 7B (the Analyst model, already resident on
-the GPU after a crew run) at temp=0, seed=42 for determinism.
+The translation runs through the active LLMBackend with whatever
+sampling `agents.translator` resolves to in agent_models.yaml
+(typically the model-family recommendation; users wanting bit-exact
+re-runs can pin `temperature: 0.0` + `seed: 42` in that section).
 
 Design rules:
   - English target is a no-op — return the input unchanged.
@@ -24,8 +26,6 @@ from __future__ import annotations
 
 import logging
 from typing import Callable
-
-from wise_investor.config import settings
 
 
 logger = logging.getLogger(__name__)
@@ -93,9 +93,8 @@ def translate_report(
     writing the translated file.
 
     `llm_call(system, user) -> str` is injectable so tests can run
-    without Ollama. Default is an Ollama chat call using the Analyst
-    model at temp=0, seed=42 (same reproducibility contract as the
-    rest of the crew).
+    without a real backend. The default routes through the active
+    LLMBackend with the sampling resolved for `agents.translator`.
     """
     if not text or not text.strip():
         return text
@@ -137,21 +136,26 @@ def translate_report(
 
 
 def _default_llm_call(system: str, user: str) -> str:
-    """Production Ollama call using the Analyst model at temp 0, seed 42."""
-    import ollama
+    """Production LLM call routed through the active LLMBackend.
 
-    resp = ollama.chat(
-        model=settings.analyst_model,
+    Pulls the model + sampling from the agent_models.yaml entry for
+    `analyst` (translator shares the Analyst model historically; if a
+    user wants a separate translator entry they can add `agents.
+    translator:` to the YAML).
+    """
+    from wise_investor.llm import get_agent_config, get_backend
+
+    backend = get_backend()
+    cfg = get_agent_config("translator", backend=backend.name)
+    response = backend.chat(
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        options={
-            "temperature": settings.llm_temperature,
-            "seed": settings.llm_seed,
-        },
+        model=cfg.model,
+        sampling=cfg.sampling,
     )
-    return resp["message"]["content"]
+    return response.content
 
 
 __all__ = [

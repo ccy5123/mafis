@@ -19,7 +19,9 @@ Economist, sector → Analyst for sector-relevant symbols).
 LLM contract:
   - System prompt + few-shot exchanges in the target language.
   - Output JSON object only; shape validated after parse.
-  - Temp=0, seed=42 for reproducibility.
+  - Sampling follows the active backend's resolved `agents.classifier`
+    config (model-family recommendation by default; users can pin
+    deterministic mode in agent_models.yaml).
   - On any parse/LLM failure we return category='unknown' so the
     store still persists the tip for human review (no data loss).
 
@@ -37,7 +39,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
-from wise_investor.config import settings
 from wise_investor.ingest.ticker_extractor import (
     _normalize_ticker,
     build_inverse_index,
@@ -304,9 +305,14 @@ def default_llm_call(
     system: str, user: str, fewshots: list[tuple[str, str]]
 ) -> str:
     """Production classifier call. Ships few-shots as chat history so
-    Qwen sees a consistent JSON output contract across turns.
+    Qwen sees a consistent JSON output contract across turns. Model
+    + sampling come from `agents.classifier` in agent_models.yaml,
+    falling back to the Analyst entry when unspecified.
     """
-    import ollama
+    from wise_investor.llm import get_agent_config, get_backend
+
+    backend = get_backend()
+    cfg = get_agent_config("classifier", backend=backend.name)
 
     messages: list[dict[str, str]] = [{"role": "system", "content": system}]
     for u, a in fewshots:
@@ -314,15 +320,12 @@ def default_llm_call(
         messages.append({"role": "assistant", "content": a})
     messages.append({"role": "user", "content": user})
 
-    resp = ollama.chat(
-        model=settings.analyst_model,
+    response = backend.chat(
         messages=messages,
-        options={
-            "temperature": settings.llm_temperature,
-            "seed": settings.llm_seed,
-        },
+        model=cfg.model,
+        sampling=cfg.sampling,
     )
-    return resp["message"]["content"]
+    return response.content
 
 
 __all__ = [

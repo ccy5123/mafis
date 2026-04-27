@@ -80,9 +80,19 @@ def run(symbol: str) -> int:
     meta_path = REPORTS_DIR / f"{symbol}_{stamp}.meta.txt"
     trace_path = REPORTS_DIR / f"{symbol}_{stamp}.trace.jsonl"
 
+    from wise_investor.llm import get_agent_config, get_backend
+    backend = get_backend()
+    cfg = get_agent_config("analyst", backend=backend.name)
+    s = cfg.sampling
+
     console.rule(f"[bold]Phase 1B — Native Analyst run for {symbol}[/bold]")
-    console.print(f"Model: [cyan]{settings.analyst_model}[/cyan]")
-    console.print(f"Temperature: {settings.llm_temperature}  Seed: {settings.llm_seed}")
+    console.print(f"Backend: [yellow]{backend.name}[/yellow]")
+    console.print(f"Model: [cyan]{cfg.model}[/cyan]")
+    console.print(
+        f"Sampling: temp={s.temperature}, top_p={s.top_p}"
+        + (f", seed={s.seed}" if s.seed is not None else "")
+        + f"  (source: {cfg.source})"
+    )
     console.print(f"Report → [dim]{report_path}[/dim]")
 
     system_prompt = build_system_prompt()
@@ -103,16 +113,18 @@ def run(symbol: str) -> int:
         system_prompt=system_prompt,
         task_prompt=user_prompt,
         facts=facts,
-        model=settings.analyst_model,
+        model=cfg.model,
+        sampling=cfg.sampling,
         log_fn=log,
     )
 
     report_path.write_text(result.final_text, encoding="utf-8")
     meta_path.write_text(
         f"symbol: {symbol}\n"
-        f"model: {settings.analyst_model}\n"
-        f"temperature: {settings.llm_temperature}\n"
-        f"seed: {settings.llm_seed}\n"
+        f"backend: {backend.name}\n"
+        f"model: {cfg.model}\n"
+        f"sampling.analyst: temperature={s.temperature}, top_p={s.top_p}, "
+        f"seed={s.seed}, thinking={s.enable_thinking}, source={cfg.source}\n"
         f"started: {stamp}\n"
         f"elapsed_sec: {result.elapsed_sec:.1f}\n"
         f"iterations: {result.iterations}\n"

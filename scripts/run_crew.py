@@ -88,14 +88,29 @@ def run(symbol: str) -> int:
     report_path = REPORTS_DIR / f"{symbol}_{stamp}.crew.md"
     meta_path = REPORTS_DIR / f"{symbol}_{stamp}.crew.meta.txt"
 
+    # Resolve per-agent config so the meta file records what each
+    # agent actually used (Phase 5 policy: model-recommended sampling
+    # by default, override-able via config/agent_models.yaml).
+    from wise_investor.llm import get_agent_config, get_backend
+    backend = get_backend()
+    agent_configs = {
+        agent: get_agent_config(agent, backend=backend.name)
+        for agent in (
+            "economist", "analyst", "valuer", "skeptic", "defender", "steward",
+        )
+    }
+
     console.rule(f"[bold]Phase 2 — Full 6-agent crew (debate) run for {symbol}[/bold]")
-    console.print(f"Economist: [cyan]{settings.analyst_model}[/cyan] (shares Analyst model)")
-    console.print(f"Analyst:   [cyan]{settings.analyst_model}[/cyan]")
-    console.print(f"Valuer:    [cyan]{settings.valuer_model}[/cyan]")
-    console.print(f"Skeptic:   [magenta]{settings.skeptic_model}[/magenta]")
-    console.print(f"Defender:  [cyan]{settings.analyst_model}[/cyan] (shares Analyst model)")
-    console.print(f"Steward:   [cyan]{settings.steward_model}[/cyan]")
-    console.print(f"Temperature: {settings.llm_temperature}  Seed: {settings.llm_seed}")
+    console.print(f"Backend: [yellow]{backend.name}[/yellow]")
+    for agent_name, cfg in agent_configs.items():
+        s = cfg.sampling
+        console.print(
+            f"{agent_name.capitalize():9} [cyan]{cfg.model}[/cyan] "
+            f"(temp={s.temperature}, top_p={s.top_p}"
+            + (f", seed={s.seed}" if s.seed is not None else "")
+            + (", thinking=on" if s.enable_thinking else "")
+            + f", source={cfg.source})"
+        )
     console.print(f"Report → [dim]{report_path}[/dim]")
 
     def log(msg: str) -> None:
@@ -135,18 +150,35 @@ def run(symbol: str) -> int:
     result.pre_gather_elapsed = pre_gather_elapsed
 
     report_path.write_text(result.combined_markdown, encoding="utf-8")
+
+    # Per-agent sampling block — replaces the old single
+    # "temperature/seed" pair. Lets a future reader reconstruct
+    # exactly what configuration produced this report even when
+    # different agents used different settings (e.g. Steward
+    # forced deterministic, others sampling at 0.7 / 0.8).
+    sampling_block = ""
+    for agent_name in (
+        "economist", "analyst", "valuer", "skeptic", "defender", "steward",
+    ):
+        s = agent_configs[agent_name].sampling
+        sampling_block += (
+            f"sampling.{agent_name}: temperature={s.temperature}, "
+            f"top_p={s.top_p}, seed={s.seed}, "
+            f"thinking={s.enable_thinking}, source={agent_configs[agent_name].source}\n"
+        )
+
     meta_path.write_text(
         f"symbol: {symbol}\n"
         f"started: {stamp}\n"
+        f"backend: {backend.name}\n"
         f"economist_model: {result.economist_model}\n"
         f"analyst_model: {result.analyst_model}\n"
         f"valuer_model: {result.valuer_model}\n"
         f"skeptic_model: {result.skeptic_model}\n"
         f"defender_model: {result.defender_model}\n"
         f"steward_model: {result.steward_model}\n"
-        f"temperature: {settings.llm_temperature}\n"
-        f"seed: {settings.llm_seed}\n"
-        f"pre_gather_sec: {result.pre_gather_elapsed:.1f}\n"
+        + sampling_block
+        + f"pre_gather_sec: {result.pre_gather_elapsed:.1f}\n"
         f"economist_sec: {result.economist_elapsed:.1f}\n"
         f"analyst_sec: {result.analyst_elapsed:.1f}\n"
         f"valuer_sec: {result.valuer_elapsed:.1f}\n"

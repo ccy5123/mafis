@@ -20,9 +20,11 @@ from wise_investor.config import settings
 def test_analyst_llm_uses_configured_ollama_model() -> None:
     # CrewAI strips the "ollama/" provider prefix when storing the model name;
     # the prefix is still used internally by LiteLLM for provider routing.
+    # Post-Phase-5 the temperature comes from `config/agent_models.yaml`
+    # (or the model-family recommendation), not settings.llm_temperature.
     llm = make_analyst_llm()
     assert llm.model == settings.analyst_model
-    assert llm.temperature == settings.llm_temperature
+    assert llm.temperature > 0
 
 
 def test_analyst_llm_points_at_local_ollama() -> None:

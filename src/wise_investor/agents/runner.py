@@ -26,9 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-import ollama
-
 from wise_investor.config import settings
+from wise_investor.llm.base import SamplingConfig
 
 
 FACTS_CACHE_DIR = Path(__file__).resolve().parents[3] / "data" / "facts_cache"
@@ -718,33 +717,46 @@ def _run_synthesis_once(
     system_prompt: str,
     user_prompt: str,
     model: str,
+    sampling: "SamplingConfig | None" = None,
     keep_alive: str | int | None = None,
     log_fn: Callable[[str], None] | None = None,
+    agent_for_config: str = "analyst",
 ) -> tuple[str, float]:
     """Single LLM call for synthesis. Returns (final_text, elapsed_sec).
 
-    Used by both the Analyst-only pipeline and the Phase 1C crew pipeline.
-    keep_alive controls how long Ollama keeps the model in memory after the
-    call — pass "0" to unload immediately (useful before a model swap).
+    Routed through the active LLMBackend so MAFIS stays portable
+    across Ollama / MLX / llama.cpp / OpenAI-compat. `sampling` is
+    optional — when omitted we resolve the recommended config for
+    `agent_for_config` so callers that haven't been migrated yet
+    still get sensible defaults.
+
+    `keep_alive` is forwarded to the backend's `chat` as a kwarg.
+    Only Ollama's backend acts on it (model swap optimization);
+    other backends ignore unknown kwargs.
     """
+    from wise_investor.llm import get_agent_config, get_backend
+
     log = log_fn or (lambda m: logger.info(m))
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    options: dict[str, Any] = {
-        "temperature": settings.llm_temperature,
-        "seed": settings.llm_seed,
-    }
-    kwargs: dict[str, Any] = {"model": model, "messages": messages, "options": options}
+
+    backend = get_backend()
+    if sampling is None:
+        sampling = get_agent_config(agent_for_config, backend=backend.name).sampling
+
+    chat_kwargs: dict[str, Any] = {}
     if keep_alive is not None:
-        kwargs["keep_alive"] = keep_alive
+        chat_kwargs["keep_alive"] = keep_alive
 
     t0 = time.perf_counter()
-    log(f"[synthesis] {model} (keep_alive={keep_alive})")
-    resp = ollama.chat(**kwargs)
+    log(f"[synthesis] {model} (keep_alive={keep_alive}) on {backend.name}")
+    response = backend.chat(
+        messages=messages, model=model, sampling=sampling, **chat_kwargs
+    )
     elapsed = time.perf_counter() - t0
-    text = resp["message"].get("content", "") or ""
+    text = response.content or ""
     log(f"[synthesis] {model} done in {elapsed:.1f}s ({len(text)} chars)")
     return text, elapsed
 
@@ -754,6 +766,7 @@ def run_analyst_synthesis(
     task_prompt: str,
     facts: dict[str, str],
     model: str | None = None,
+    sampling: "SamplingConfig | None" = None,
     log_fn: Callable[[str], None] | None = None,
 ) -> AgentRunResult:
     """Synthesis-only LLM call: no tool calls, just narrative over given facts.
@@ -762,8 +775,15 @@ def run_analyst_synthesis(
     to compose the seven-section report citing those facts. This removes the
     "decide when to call tools" step that small local models are unreliable at.
     """
-    model = model or settings.analyst_model
+    from wise_investor.llm import get_agent_config, get_backend
+
     log = log_fn or (lambda m: logger.info(m))
+
+    backend = get_backend()
+    if model is None or sampling is None:
+        cfg = get_agent_config("analyst", backend=backend.name)
+        model = model or cfg.model
+        sampling = sampling or cfg.sampling
 
     # Anthropic research: long source documents belong at the TOP of the prompt,
     # with the question / instructions last (up to 30% quality lift). We put
@@ -797,17 +817,10 @@ def run_analyst_synthesis(
     ]
 
     t0 = time.perf_counter()
-    log(f"[synthesis] calling {model}")
-    resp = ollama.chat(
-        model=model,
-        messages=messages,
-        options={
-            "temperature": settings.llm_temperature,
-            "seed": settings.llm_seed,
-        },
-    )
+    log(f"[synthesis] calling {model} on {backend.name}")
+    response = backend.chat(messages=messages, model=model, sampling=sampling)
     elapsed = time.perf_counter() - t0
-    final = resp["message"].get("content", "") or ""
+    final = response.content or ""
     log(f"[synthesis] done in {elapsed:.1f}s")
 
     # Represent the pre-gather as fake tool trace entries so downstream tooling
@@ -1287,15 +1300,25 @@ def run_agent(
     system_prompt: str,
     user_prompt: str,
     model: str | None = None,
+    sampling: "SamplingConfig | None" = None,
     max_iterations: int = 30,
     log_fn: Callable[[str], None] | None = None,
 ) -> AgentRunResult:
-    """Run a single-agent tool-using loop against Ollama.
+    """Run a single-agent tool-using loop through the active LLMBackend.
 
     Stops when the model returns a message with no tool_calls (final answer) or
-    when max_iterations is exceeded.
+    when max_iterations is exceeded. Tool-calling support is backend-dependent:
+    Ollama and OpenAI-compat carry it through; MLX/llama.cpp would need a
+    server (mlx_lm.server) plus the openai_compat backend.
     """
-    model = model or settings.analyst_model
+    from wise_investor.llm import get_agent_config, get_backend
+
+    backend = get_backend()
+    if model is None or sampling is None:
+        cfg = get_agent_config("analyst", backend=backend.name)
+        model = model or cfg.model
+        sampling = sampling or cfg.sampling
+
     log = log_fn or (lambda m: logger.info(m))
 
     messages: list[dict[str, Any]] = [
@@ -1309,17 +1332,20 @@ def run_agent(
 
     for iteration in range(1, max_iterations + 1):
         log(f"[iter {iteration}] calling {model}")
-        resp = ollama.chat(
-            model=model,
+        response = backend.chat(
             messages=messages,
+            model=model,
+            sampling=sampling,
             tools=TOOL_SPECS,
-            options={
-                "temperature": settings.llm_temperature,
-                "seed": settings.llm_seed,
-            },
         )
-        msg = resp["message"]
-        tool_calls = msg.get("tool_calls") or []
+        # The runner downstream still operates on a "message dict".
+        # Reconstruct one from LLMResponse so all the indexing logic
+        # below stays unchanged.
+        tool_calls = response.extra.get("tool_calls") or []
+        msg = {
+            "content": response.content or "",
+            "tool_calls": tool_calls,
+        }
 
         # Record the assistant turn (with whatever content / tool_calls it produced).
         messages.append(
