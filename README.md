@@ -44,12 +44,17 @@ Supported markets:
 
 | Phase | Status | What's in it |
 |-------|--------|--------------|
-| Phase 1 MVP | ✅ Complete | 5 agents + quality metrics + reproducibility (`temperature=0`, `seed=42`) — formal GO verdict |
+| Phase 1 MVP | ✅ Complete | 5 agents + quality metrics — formal GO verdict |
 | Phase 2 | ✅ 98% | Economist + Steward + Defender + debate round + 3-layer audit + portfolio SQLite + auto-onboarding |
 | Phase 3 | ✅ 98% | 3-Tier registry + SEC EDGAR RAG + DART + chain alerts + pre-filter stages 1–3 + dedup ledger |
 | Phase 4 | 🟡 75% | Paper trading ledger + auto-record on crew completion + regression-diff tool |
+| LLM backend abstraction | ✅ | Pluggable backends (Ollama / OpenAI-compat / MLX / llama.cpp) + per-agent model+sampling routing via `config/agent_models.yaml` |
 
-**475 tests pass, 0 skipped offline.**
+**Sampling policy**: each agent uses its model's published recommended
+sampling (e.g. Qwen 2.5 → `temperature=0.7`/`top_p=0.8`). Same prompt
+twice can produce different outputs. See
+[`docs/llm_backends.md`](docs/llm_backends.md) for the full policy
+discussion and how to opt back into deterministic mode per-agent.
 
 ---
 
@@ -64,7 +69,7 @@ Supported markets:
 - OpenDART API key (free, for Korean stocks; [opendart.fss.or.kr](https://opendart.fss.or.kr/mngInfo/mngInfoMain.do))
 - Telegram bot (optional, for push notifications)
 
-### 1. Install Ollama + models
+### 1. Install Ollama + models (default backend)
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
@@ -74,6 +79,12 @@ ollama serve &
 ollama pull qwen2.5:7b-16k
 ollama pull llama3.1:8b-16k
 ```
+
+Want a different backend? See
+[**Alternative LLM backends**](docs/llm_backends.md) — MAFIS supports
+Apple Silicon (MLX), GGUF (llama.cpp), and any OpenAI-compatible
+server (vLLM, LM Studio, mlx_lm.server, …) without changing the
+agent code.
 
 ### 2. Configure `.env`
 
@@ -99,7 +110,7 @@ uv pip install -e ".[dev]"
 
 ```bash
 python scripts/verify_env.py      # API keys + Ollama reachable
-pytest                            # should report 475 passed
+pytest                            # should report 750+ passed
 ```
 
 ---
@@ -241,7 +252,7 @@ src/wise_investor/
 scripts/                     # CLI entry points for every component above
 docs/value_chains/           # hand-curated + auto-drafted briefs (*.md vs *.draft.md)
 data/                        # portfolio.sqlite, chroma/, edgar_cache/, facts_cache/
-tests/                       # 475 tests
+tests/                       # 750+ tests (offline; live ones marked -m network)
 ```
 
 ---
@@ -254,8 +265,13 @@ tests/                       # 475 tests
   and growth rate is computed by `src/wise_investor/tools/` or `data/`
   and fed to the LLM as prepared facts. The LLM synthesizes narrative,
   never arithmetic.
-- **Reproducibility**: `temperature=0`, `seed=42` → byte-identical
-  agent outputs across runs on the same facts cache.
+- **Sampling follows model recommendations**: each agent uses the
+  sampling profile published by its model author (Qwen 2.5: 0.7/0.8;
+  Llama 3.x: 0.7/0.9; Qwen3 thinking: 0.6/0.95/min_p=0). Two runs of
+  the same crew may differ; the audit + citation system enforce
+  within-run consistency, not run-to-run reproducibility. Opt back
+  into deterministic mode per agent in
+  [`config/agent_models.yaml`](docs/llm_backends.md#re-enabling-deterministic-output).
 - **Multi-layer audit**: discipline matrix (verdict vs labels) +
   speculative-language detector + Defender-aware correction + edgar
   citation grounding + Skeptic mandate compliance. The LLM can emit
