@@ -845,9 +845,18 @@ def run_analyst_synthesis(
 
 
 def _wrap_user_prompt_with_facts(
-    task_prompt: str, facts: dict[str, str], is_skeptic: bool = False
+    task_prompt: str,
+    facts: dict[str, str],
+    is_skeptic: bool = False,
+    tips_block: str = "",
 ) -> str:
-    """Prepend the pre-gathered facts block to any task-specific user prompt."""
+    """Prepend the pre-gathered facts block to any task-specific user prompt.
+
+    `tips_block` is the output of `data.tip_feed.format_tips_block` — when
+    non-empty, it's inserted between the facts block and the task prompt
+    (after the citation rules, so agents see the user-tip context as
+    an additional input rather than as part of the citable tool corpus).
+    """
     facts_block = render_facts_block(facts)
     intro = (
         "<pre_gathered_tool_outputs>\n"
@@ -897,6 +906,8 @@ def _wrap_user_prompt_with_facts(
         + facts_block
         + "\n</pre_gathered_tool_outputs>\n\n"
     )
+    if tips_block:
+        intro += tips_block + "\n\n"
     return intro + task_prompt
 
 
@@ -955,6 +966,7 @@ def run_crew_synthesis(
     skeptic_model_name: str | None = None,
     steward_model_name: str | None = None,
     defender_model_name: str | None = None,
+    run_tag: str | None = None,
     log_fn: Callable[[str], None] | None = None,
 ) -> CrewRunResult:
     """Run the Phase 2 full pipeline:
@@ -981,10 +993,37 @@ def run_crew_synthesis(
 
     t_start = time.perf_counter()
 
+    # -- User tips: pull and format once at the top so every agent's
+    # user prompt carries the same `<user_provided_tips>` block. We
+    # only fetch when run_tag is supplied — without it we can't dedupe
+    # consumed tips across runs, which would mean the same tip injects
+    # into every report indefinitely.
+    tips_block = ""
+    tips_bundle = None
+    if run_tag:
+        try:
+            from wise_investor.data.tip_feed import (
+                fetch_tips_for_run,
+                format_tips_block,
+            )
+            tips_bundle = fetch_tips_for_run(symbol, run_tag)
+            tips_block = format_tips_block(tips_bundle, symbol)
+            if tips_bundle and not tips_bundle.is_empty:
+                log(
+                    f"[crew] tips: {len(tips_bundle.ticker)} ticker, "
+                    f"{len(tips_bundle.macro)} macro injected"
+                )
+        except Exception as e:
+            logger.warning("tip_feed gather failed (%s); skipping tips.", e)
+            tips_bundle = None
+            tips_block = ""
+
     # -- Economist (macro backdrop, reads value chain + macro snapshot)
     log(f"[crew] Economist on {e_model}")
     economist_task = economist_user_prompt_builder(symbol, value_chain_text)
-    economist_user = _wrap_user_prompt_with_facts(economist_task, facts)
+    economist_user = _wrap_user_prompt_with_facts(
+        economist_task, facts, tips_block=tips_block
+    )
     economist_text, economist_elapsed = _run_synthesis_once(
         system_prompt=economist_system,
         user_prompt=economist_user,
@@ -1004,7 +1043,9 @@ def run_crew_synthesis(
         + "\n</economist_section>\n\n"
         + analyst_task
     )
-    analyst_user = _wrap_user_prompt_with_facts(analyst_task_with_macro, facts)
+    analyst_user = _wrap_user_prompt_with_facts(
+        analyst_task_with_macro, facts, tips_block=tips_block
+    )
     analyst_text, analyst_elapsed = _run_synthesis_once(
         system_prompt=analyst_system,
         user_prompt=analyst_user,
@@ -1015,7 +1056,9 @@ def run_crew_synthesis(
     # -- Valuer (reads Analyst output)
     log(f"[crew] Valuer on {v_model}")
     valuer_task = valuer_user_prompt_builder(symbol, value_chain_text, analyst_text)
-    valuer_user = _wrap_user_prompt_with_facts(valuer_task, facts)
+    valuer_user = _wrap_user_prompt_with_facts(
+        valuer_task, facts, tips_block=tips_block
+    )
     valuer_unload = "0" if s_model != v_model else None
     valuer_text, valuer_elapsed = _run_synthesis_once(
         system_prompt=valuer_system,
@@ -1030,7 +1073,9 @@ def run_crew_synthesis(
     skeptic_task = skeptic_user_prompt_builder(
         symbol, value_chain_text, analyst_text, valuer_text
     )
-    skeptic_user = _wrap_user_prompt_with_facts(skeptic_task, facts, is_skeptic=True)
+    skeptic_user = _wrap_user_prompt_with_facts(
+        skeptic_task, facts, is_skeptic=True, tips_block=tips_block
+    )
     # Unload Skeptic model if the next stage (Defender or Steward) runs on
     # a different model (typical: Skeptic=Llama, Defender/Steward=Qwen).
     next_after_skeptic = d_model if defender_system else st_model
@@ -1051,7 +1096,9 @@ def run_crew_synthesis(
         defender_task = defender_user_prompt_builder(
             symbol, analyst_text, valuer_text, skeptic_text
         )
-        defender_user = _wrap_user_prompt_with_facts(defender_task, facts)
+        defender_user = _wrap_user_prompt_with_facts(
+            defender_task, facts, tips_block=tips_block
+        )
         # Unload Defender model if Steward runs on a different model.
         defender_unload = "0" if st_model != d_model else None
         defender_text, defender_elapsed = _run_synthesis_once(
@@ -1072,7 +1119,9 @@ def run_crew_synthesis(
         skeptic_text,
         defender_text,
     )
-    steward_user = _wrap_user_prompt_with_facts(steward_task, facts)
+    steward_user = _wrap_user_prompt_with_facts(
+        steward_task, facts, tips_block=tips_block
+    )
     steward_text, steward_elapsed = _run_synthesis_once(
         system_prompt=steward_system,
         user_prompt=steward_user,
@@ -1118,6 +1167,24 @@ def run_crew_synthesis(
             f"mistranslated={audit.steward_mistranslated})"
         )
         steward_text = apply_audit_to_section(steward_text, audit)
+
+    # -- Mark injected tips as consumed by this run so the next crew
+    # for the same ticker doesn't re-inject them. We do this AFTER the
+    # audit so a failed audit (which doesn't currently abort, but might
+    # in future) doesn't leave tips unmarked. Failure is non-fatal —
+    # the report has already been produced; a missed mark just means
+    # one duplicate injection on the next run.
+    if run_tag and tips_bundle is not None and not tips_bundle.is_empty:
+        try:
+            from wise_investor.data.tip_feed import mark_consumed_for_run
+            n_marked = mark_consumed_for_run(tips_bundle.all_tips(), run_tag)
+            log(f"[crew] tips: marked {n_marked} as consumed by {run_tag}")
+        except Exception as e:
+            logger.warning(
+                "tip_feed mark_consumed failed (%s); next run may "
+                "re-inject these tips.",
+                e,
+            )
 
     total_elapsed = time.perf_counter() - t_start
 

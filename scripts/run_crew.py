@@ -144,6 +144,10 @@ def run(symbol: str) -> int:
         defender_user_prompt_builder=make_defender_user_prompt,
         steward_system=make_steward_system_prompt(),
         steward_user_prompt_builder=make_steward_user_prompt,
+        # run_tag dedupes tip injection across crew runs on the same
+        # ticker — the same group-chat tip should not be re-injected
+        # into every report.
+        run_tag=f"{symbol}_{stamp}",
         log_fn=log,
     )
     # Attach the pre-gather time so the meta file is complete.
