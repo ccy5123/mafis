@@ -92,6 +92,7 @@ def fetch_live_fundamentals(
     finnhub_client: FinancialsClient | None = None,
     dart_client: Any = None,
     industry_aggregates: IndustryAggregates | None = None,
+    rag_signals: Any = None,
     effective_tax_rate: float | None = None,
 ) -> TickerFundamentals:
     """Dispatcher: route by symbol pattern to the right per-source adapter.
@@ -104,6 +105,10 @@ def fetch_live_fundamentals(
         finnhub_client: Used by the US adapter when applicable.
         dart_client: Used by the KR adapter when applicable.
         industry_aggregates: Forwarded as-is. Same shape works for both.
+        rag_signals: Optional RagSignals for top5_customer_share +
+            diversification_attempt_signals. US adapter only — Korean
+            tickers don't have a 10-K equivalent in the same RAG index,
+            so the KR path silently ignores this argument.
         effective_tax_rate: When None, each adapter uses its own default
             (US: 21%, KR: 22%). Override here only if you want a uniform
             rate across mixed-market batches.
@@ -128,6 +133,7 @@ def fetch_live_fundamentals(
         symbol,
         client=finnhub_client,
         industry_aggregates=industry_aggregates,
+        rag_signals=rag_signals,
         effective_tax_rate=rate,
     )
 
@@ -137,6 +143,7 @@ def fetch_live_fundamentals_us(
     *,
     client: FinancialsClient | None = None,
     industry_aggregates: IndustryAggregates | None = None,
+    rag_signals: Any = None,
     effective_tax_rate: float = DEFAULT_EFFECTIVE_TAX_RATE,
 ) -> TickerFundamentals:
     """Pull latest filings from Finnhub and shape them into `TickerFundamentals`.
@@ -150,6 +157,11 @@ def fetch_live_fundamentals_us(
             module stays importable without the Finnhub API key set).
         industry_aggregates: Pre-computed peer median/std. None leaves
             the comparison fields None — the prefilter handles that.
+        rag_signals: Optional `RagSignals` from
+            `screening.rag_signals.extract_rag_signals(symbol)`. When
+            supplied, populates top5_customer_share and
+            diversification_attempt_signals from the indexed 10-K.
+            None keeps the legacy hardcoded defaults (None / 0).
         effective_tax_rate: Used to derive NOPAT from operating income.
     """
     if client is None:
@@ -207,14 +219,25 @@ def fetch_live_fundamentals_us(
         roic_median = None
         gm_std = None
 
+    # --- RAG-derived 10-K signals (top5 customer + diversification) ---
+    if rag_signals is not None:
+        top5 = rag_signals.top5_customer_share
+        diversif = rag_signals.diversification_attempt_signals
+    else:
+        # Commitment 3: when no RAG signals supplied, surface explicit
+        # None/0 rather than fabricating values. The prefilter routes
+        # missing top5 through NEED_LLM, never PASS.
+        top5 = None
+        diversif = 0
+
     return TickerFundamentals(
         symbol=sym,
         industry_classification=industry_classification,
         annual=annual_t,
         quarterly_margins=quarterly_t,
         segments_history=segments_history,
-        top5_customer_share=None,            # Commitment 3 — see module docstring
-        diversification_attempt_signals=0,    # Commitment 3 — see module docstring
+        top5_customer_share=top5,
+        diversification_attempt_signals=diversif,
         industry_roic_3y_median=roic_median,
         industry_gross_margin_3y_std=gm_std,
     )

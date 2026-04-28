@@ -76,6 +76,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--with-rag-signals",
+        action="store_true",
+        help=(
+            "Extract top5_customer_share + diversification_attempt_signals "
+            "from indexed 10-K filings via ChromaDB + LLM. Requires the "
+            "filing to have been indexed via scripts/index_10k.py. US "
+            "tickers only — Korean tickers silently skip."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output JSON instead of formatted tables.",
@@ -98,7 +108,12 @@ def main() -> int:
     else:
         symbols = [args.symbol]
 
-    results = _run(symbols, with_stage3=args.with_stage3, with_peers=args.with_peers)
+    results = _run(
+        symbols,
+        with_stage3=args.with_stage3,
+        with_peers=args.with_peers,
+        with_rag_signals=args.with_rag_signals,
+    )
 
     if args.json:
         print(json.dumps(_to_json(results), indent=2, default=str))
@@ -118,6 +133,7 @@ def _run(
     *,
     with_stage3: bool,
     with_peers: bool = False,
+    with_rag_signals: bool = False,
 ) -> list[dict]:
     """Screen each symbol; collect (symbol, prefilter, stage3, error) rows."""
     results: list[dict] = []
@@ -137,27 +153,38 @@ def _run(
                 "error": None,
             }
             try:
-                # --with-peers: compute industry aggregates first (US tickers
-                # only — Finnhub peers for KRX are sparse, so KR tickers
-                # silently skip the aggregator and proceed without peer
-                # comparison fields).
+                # Both --with-peers and --with-rag-signals are US-only
+                # enrichment paths. Korean tickers silently skip both
+                # because (a) Finnhub peers are sparse for KRX and
+                # (b) DART filings aren't indexed in the same RAG
+                # collection as 10-Ks.
+                from wise_investor.screening.live_adapter_kr import (
+                    is_korean_symbol,
+                )
+                is_kr = is_korean_symbol(sym)
+
                 aggs = None
-                if with_peers:
-                    from wise_investor.screening.live_adapter_kr import (
-                        is_korean_symbol,
+                if with_peers and not is_kr:
+                    prog.update(task, description=f"Aggregating peers for {sym}...")
+                    from wise_investor.screening.peer_aggregator import (
+                        compute_industry_aggregates,
                     )
-                    if not is_korean_symbol(sym):
-                        prog.update(task, description=f"Aggregating peers for {sym}...")
-                        from wise_investor.screening.peer_aggregator import (
-                            compute_industry_aggregates,
-                        )
-                        peer_result = compute_industry_aggregates(sym)
-                        aggs = peer_result.industry_aggregates
+                    peer_result = compute_industry_aggregates(sym)
+                    aggs = peer_result.industry_aggregates
+
+                rag = None
+                if with_rag_signals and not is_kr:
+                    prog.update(task, description=f"RAG signals for {sym}...")
+                    from wise_investor.screening.rag_signals import (
+                        extract_rag_signals,
+                    )
+                    rag = extract_rag_signals(sym)
 
                 prog.update(task, description=f"Fetching {sym}...")
                 funds = fetch_live_fundamentals(
                     sym,
                     industry_aggregates=aggs,
+                    rag_signals=rag,
                 )
                 primary = (
                     funds.segments_history[-1] if funds.segments_history else None
