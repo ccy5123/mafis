@@ -141,6 +141,19 @@ def compute_industry_aggregates(
         logger.warning("peers() failed for %s: %s — returning empty aggregates", sym, e)
         return _empty_result()
 
+    # Self-exclusion has to account for the financials-reported alias
+    # map: querying GOOG's peers returns GOOGL, but for ROIC purposes
+    # GOOGL == GOOG (the 10-K covers both). Without this, GOOG would
+    # show up with its own data as a peer and double-count. The alias
+    # map lives in `data.finnhub`; we import lazily to keep this module
+    # importable without the Finnhub dep.
+    try:
+        from wise_investor.data.finnhub import _financials_symbol
+        sym_alias = _financials_symbol(sym)
+    except Exception:
+        sym_alias = sym
+    self_aliases = {sym, sym_alias}
+
     # Drop self-references and dedupe while preserving order.
     seen: set[str] = set()
     peer_list: list[str] = []
@@ -148,10 +161,20 @@ def compute_industry_aggregates(
         if not p or not isinstance(p, str):
             continue
         u = p.upper()
-        if u == sym or u in seen:
+        if u in self_aliases or u in seen:
             continue
-        seen.add(u)
-        peer_list.append(u)
+        # Also normalize the peer's symbol to its financials alias
+        # so two peers that are dual-share siblings don't get fetched
+        # twice (the underlying 10-K is identical).
+        try:
+            from wise_investor.data.finnhub import _financials_symbol as _alias_for
+            u_alias = _alias_for(u)
+        except Exception:
+            u_alias = u
+        if u_alias in self_aliases or u_alias in seen:
+            continue
+        seen.add(u_alias)
+        peer_list.append(u_alias)
         if len(peer_list) >= peer_limit:
             break
 

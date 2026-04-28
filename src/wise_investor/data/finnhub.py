@@ -34,6 +34,34 @@ BASE_URL = "https://finnhub.io/api/v1"
 DOLLAR_MILLIONS = 1_000_000.0
 
 
+# Ticker-to-financials-reporting alias map. Surfaces the cases where a
+# ticker we hold in the manifest is NOT the ticker Finnhub indexes the
+# SEC filings under. Calibration finding (#4, 2026-04):
+#
+#   GOOG → GOOGL: post-2015 Alphabet reorg, the 10-K is filed under
+#                 GOOGL (Class A); GOOG (Class C non-voting) carries
+#                 only pre-reorg filings (2011-2015). Querying GOOG's
+#                 financials-reported gives 4 stale entries; GOOGL
+#                 gives 11 current ones.
+#
+# This map only affects the financials-reported endpoint. Quote,
+# profile, peers, and metric still resolve under the original ticker
+# (those are price/identity metadata, not filing data).
+_FINANCIALS_TICKER_ALIAS: dict[str, str] = {
+    "GOOG": "GOOGL",
+}
+
+
+def _financials_symbol(symbol: str) -> str:
+    """Return the ticker Finnhub indexes 10-K filings under.
+
+    Most tickers map to themselves. The alias map handles the cases
+    where a ticker holds the price symbol but the financials live
+    under a sibling (most often a dual-class-share reorg).
+    """
+    return _FINANCIALS_TICKER_ALIAS.get(symbol.upper(), symbol.upper())
+
+
 class FinnhubError(RuntimeError):
     """Raised when Finnhub returns an error payload or non-retryable HTTP failure."""
 
@@ -435,8 +463,14 @@ class FinnhubClient:
         return MetricResponse.model_validate(data)
 
     def financials(self, symbol: str, freq: str = "annual") -> FinancialsResponse:
+        # Apply alias normalization here, not at call sites — the alias
+        # is specific to the financials-reported endpoint, not to other
+        # Finnhub APIs (price/profile/peers all still resolve under the
+        # original ticker).
         data = self._get(
-            "/stock/financials-reported", symbol=symbol.upper(), freq=freq
+            "/stock/financials-reported",
+            symbol=_financials_symbol(symbol),
+            freq=freq,
         )
         return FinancialsResponse.model_validate(data)
 

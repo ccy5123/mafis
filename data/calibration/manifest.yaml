@@ -32,8 +32,16 @@ tickers:
   - { symbol: MCO,   market: US,     rationale: "Credit ratings — regulatory + reputation moat" }
 
   # --- Bottleneck axis exemplars (process bottlenecks) ---
-  - { symbol: TSM,   market: US-ADR, rationale: "Leading-edge fab process — technical bottleneck pure-play" }
-  - { symbol: ASML,  market: US-ADR, rationale: "EUV lithography monopoly — technical bottleneck" }
+  # Note (#4 2026-04): TSM and ASML are foreign issuers (TWSE, AEX)
+  # filing 20-F, not 10-K. Finnhub /stock/financials-reported indexes
+  # SEC US-GAAP XBRL only, so these return 0 historical entries. They
+  # show up as "REJECT — ROIC <3 years" in calibration runs not because
+  # the rubric judged them, but because data is unavailable. Until an
+  # alternate fundamentals source is wired (EDGAR 20-F parser or
+  # paid-tier provider), back-validation effectively excludes them.
+  # They stay in the manifest as a coverage-gap reminder.
+  - { symbol: TSM,   market: US-ADR, rationale: "Leading-edge fab process — technical bottleneck pure-play (NOTE: Finnhub financials-reported coverage gap, see manifest header)" }
+  - { symbol: ASML,  market: US-ADR, rationale: "EUV lithography monopoly — technical bottleneck (NOTE: same coverage gap as TSM)" }
   - { symbol: CDNS,  market: US,     rationale: "EDA tools duopoly — technical bottleneck" }
   - { symbol: SNPS,  market: US,     rationale: "EDA tools duopoly — technical bottleneck pair w/ CDNS" }
 
@@ -51,7 +59,12 @@ tickers:
 
   # --- Conglomerate / multi-segment edge cases (§13 30% rule) ---
   - { symbol: BRK-B, market: US,     rationale: "Holding company — §13 30% rule should likely exclude" }
-  - { symbol: GOOG,  market: US,     rationale: "Search dominant + Other Bets — §13 should isolate Search segment" }
+  # GOOG carries the Class C non-voting price symbol; financials are
+  # reported under GOOGL (Class A) post-2015 reorg. Finnhub indexes
+  # the 10-K under GOOGL only. The data layer auto-aliases GOOG ->
+  # GOOGL when fetching financials-reported (see data/finnhub.py
+  # _financials_symbol).
+  - { symbol: GOOG,  market: US,     rationale: "Search dominant + Other Bets — §13 should isolate Search segment (financials auto-aliased to GOOGL)" }
 
   # --- Specialty / cyclical fundamentals tests ---
   - { symbol: COST,  market: US,     rationale: "Membership retail — low GM but stable; persistence test" }
