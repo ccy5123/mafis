@@ -1,0 +1,72 @@
+# Calibration manifest — Constitution v2.0 §22 back-validation.
+#
+# Selection principle: tickers chosen for axis-diversity coverage,
+# NOT user preference, prior PnL, or analyst opinion. Each entry's
+# rationale documents the structural reason it earns a slot — moat
+# axis exemplar, bottleneck pure-play, frontier expansion historical
+# case, negative control, §13 multi-segment edge case, etc.
+#
+# Commitment 1 (constitution v2.0 §1): user preferences MUST NOT
+# influence universe membership. If a future revision adds or
+# removes a ticker, the rationale field must justify the change in
+# axis-coverage terms — not "I want to track this stock."
+
+metadata:
+  version: 1
+  selection_principle: |
+    Tickers selected for axis-diversity coverage per Constitution v2.0 §22.
+    Selection criteria are objective: industry coverage, expected axis pass
+    distribution, segment-reporting structure (single vs multi-segment for
+    §13). NO ticker is included because of user preference, recent
+    performance, or analyst opinion. Negative controls and conglomerate
+    edge cases are intentionally included so the rubric is exercised in
+    both directions.
+  default_calibration_date: "2018-06-30"
+  default_horizon_years: 5
+
+tickers:
+  # --- Moat axis exemplars (high ROIC; brand / network / switching) ---
+  - { symbol: KO,    market: US,     rationale: "Beverages — long-cited brand-moat exemplar; ROIC advantage detection" }
+  - { symbol: MSFT,  market: US,     rationale: "Software platforms — switching-cost moat; stable ROIC" }
+  - { symbol: V,     market: US,     rationale: "Payment networks — two-sided network moat" }
+  - { symbol: MCO,   market: US,     rationale: "Credit ratings — regulatory + reputation moat" }
+
+  # --- Bottleneck axis exemplars (process bottlenecks) ---
+  - { symbol: TSM,   market: US-ADR, rationale: "Leading-edge fab process — technical bottleneck pure-play" }
+  - { symbol: ASML,  market: US-ADR, rationale: "EUV lithography monopoly — technical bottleneck" }
+  - { symbol: CDNS,  market: US,     rationale: "EDA tools duopoly — technical bottleneck" }
+  - { symbol: SNPS,  market: US,     rationale: "EDA tools duopoly — technical bottleneck pair w/ CDNS" }
+
+  # --- New Frontier exemplars (entry into new market with first-mover) ---
+  - { symbol: NVDA,  market: US,     rationale: "AI accelerators — frontier expansion from gaming" }
+  - { symbol: AMZN,  market: US,     rationale: "AWS — frontier expansion from retail" }
+  - { symbol: NFLX,  market: US,     rationale: "Streaming pivot from DVD — historical frontier (2018 selection date catches arc)" }
+  - { symbol: TSLA,  market: US,     rationale: "EV mainstream entry — historical frontier; selection-date sensitive" }
+
+  # --- Negative controls (expected to fail multiple axes) ---
+  - { symbol: T,     market: US,     rationale: "Telecom — capital-intensive, eroding moat; negative control" }
+  - { symbol: F,     market: US,     rationale: "Auto OEM — historically thin ROIC; negative control" }
+  - { symbol: INTC,  market: US,     rationale: "Process leadership lost mid-2010s; negative control on bottleneck axis" }
+  - { symbol: GE,    market: US,     rationale: "Conglomerate restructuring — §13 multi-segment edge case" }
+
+  # --- Conglomerate / multi-segment edge cases (§13 30% rule) ---
+  - { symbol: BRK-B, market: US,     rationale: "Holding company — §13 30% rule should likely exclude" }
+  - { symbol: GOOG,  market: US,     rationale: "Search dominant + Other Bets — §13 should isolate Search segment" }
+
+  # --- Specialty / cyclical fundamentals tests ---
+  - { symbol: COST,  market: US,     rationale: "Membership retail — low GM but stable; persistence test" }
+  - { symbol: HD,    market: US,     rationale: "Big-box retail — domestic moat test" }
+  - { symbol: LLY,   market: US,     rationale: "Pharma — patent moat with finite life; trend test" }
+  - { symbol: NVO,   market: US-ADR, rationale: "Pharma — Ozempic franchise; new-frontier expansion" }
+
+  # --- Korean tickers (KOSPI representative names) ---
+  - { symbol: 005930.KS, market: KR, rationale: "Samsung Electronics — memory bottleneck + foundry frontier" }
+  - { symbol: 000660.KS, market: KR, rationale: "SK Hynix — memory bottleneck pure-play" }
+  - { symbol: 035420.KS, market: KR, rationale: "NAVER — domestic platform moat" }
+  - { symbol: 035720.KS, market: KR, rationale: "Kakao — domestic platform with diversification attempts" }
+  - { symbol: 207940.KS, market: KR, rationale: "Samsung Biologics — biosimilar bottleneck" }
+  - { symbol: 373220.KS, market: KR, rationale: "LG Energy Solution — battery cells; frontier candidate" }
+  - { symbol: 005380.KS, market: KR, rationale: "Hyundai Motor — auto OEM Korean cyclical control" }
+
+  # --- ETF sentinel (universe should self-exclude; sanity test) ---
+  - { symbol: SPY,   market: US,     rationale: "S&P 500 ETF — universe should self-exclude; sanity test on §13" }

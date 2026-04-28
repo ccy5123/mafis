@@ -21,7 +21,15 @@ env/
 
 # Data & models (local cache, not committed)
 # Leading slash restricts to repo root so src/wise_investor/data/ is NOT matched.
-/data/
+# We exclude /data/* (children) rather than /data/ itself so the calibration
+# manifest can be re-included via negation — git won't re-include a file
+# whose parent directory is fully excluded.
+/data/*
+# Calibration manifest is config, not output — keep it tracked so back-validation
+# tests + the runner CLI work on a clean clone (constitution v2.0 §22).
+!/data/calibration/
+/data/calibration/*
+!/data/calibration/manifest.yaml
 chroma_db/
 *.sqlite
 *.sqlite3
@@ -44,6 +52,9 @@ htmlcov/
 *.swp
 *.swo
 *~
+
+# Claude Code local state (scheduled task locks, etc.)
+.claude/
 
 # OS
 .DS_Store
