@@ -86,6 +86,15 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--with-tip-annotations",
+        action="store_true",
+        help=(
+            "Decorate the output with read-only tip annotations from "
+            "the local TipStore. Per constitution Sec 7, this is metadata "
+            "for the user — it never enters any LLM context."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output JSON instead of formatted tables.",
@@ -115,11 +124,34 @@ def main() -> int:
         with_rag_signals=args.with_rag_signals,
     )
 
+    tip_annotations: dict = {}
+    if args.with_tip_annotations:
+        from wise_investor.ingest.tip_annotation import lookup_tip_annotations
+        from wise_investor.ingest.tip_store import TipStore
+
+        store = TipStore()
+        tip_annotations = lookup_tip_annotations(symbols, store)
+
     if args.json:
-        print(json.dumps(_to_json(results), indent=2, default=str))
+        payload = _to_json(results)
+        if tip_annotations:
+            for row in payload:
+                ann = tip_annotations.get(row["symbol"].upper())
+                if ann is not None:
+                    row["tip_annotation"] = {
+                        "n_mentions": ann.n_mentions,
+                        "first_mention_days_ago": ann.first_mention_days_ago,
+                        "last_mention_days_ago": ann.last_mention_days_ago,
+                        "rendered": ann.render(),
+                    }
+        print(json.dumps(payload, indent=2, default=str))
         return 0
 
-    _print_table(results, with_stage3=args.with_stage3)
+    _print_table(
+        results,
+        with_stage3=args.with_stage3,
+        tip_annotations=tip_annotations,
+    )
     return 0
 
 
@@ -209,7 +241,12 @@ def _run(
 # ---------------------------------------------------------------------------
 
 
-def _print_table(results: list[dict], *, with_stage3: bool) -> None:
+def _print_table(
+    results: list[dict],
+    *,
+    with_stage3: bool,
+    tip_annotations: dict | None = None,
+) -> None:
     table = Table(title="Live screening", show_lines=True)
     table.add_column("Symbol", style="bold")
     table.add_column("Stage 2")
@@ -218,6 +255,8 @@ def _print_table(results: list[dict], *, with_stage3: bool) -> None:
     table.add_column("Bottleneck")
     if with_stage3:
         table.add_column("Stage 3")
+    if tip_annotations:
+        table.add_column("Tip log")
 
     for row in results:
         sym = row["symbol"]
@@ -225,6 +264,8 @@ def _print_table(results: list[dict], *, with_stage3: bool) -> None:
             err_msg = row["error"][:50]
             cells = [sym, f"[red]ERROR: {err_msg}[/red]", "—", "—", "—"]
             if with_stage3:
+                cells.append("—")
+            if tip_annotations:
                 cells.append("—")
             table.add_row(*cells)
             continue
@@ -258,6 +299,11 @@ def _print_table(results: list[dict], *, with_stage3: bool) -> None:
                     else "REJECT"
                 )
                 cells.append(f"[{color}]{short}[/{color}]")
+        if tip_annotations is not None:
+            ann = tip_annotations.get(sym.upper())
+            cells.append(
+                f"[blue]{ann.render()}[/blue]" if ann else "[dim]—[/dim]"
+            )
         table.add_row(*cells)
 
     console.print(table)
