@@ -12,10 +12,24 @@ and current shares. Market value + weight are derived on-the-fly from
 the latest quote rather than stored, so the store doesn't age.
 """
 
+from wise_investor.portfolio.construction import (
+    PortfolioConstructionResult,
+    PositionTrade,
+    construct_portfolio,
+)
+from wise_investor.portfolio.hrp import compute_hrp_weights
 from wise_investor.portfolio.store import (
     PortfolioStore,
     Position,
     WeightSnapshot,
 )
 
-__all__ = ["PortfolioStore", "Position", "WeightSnapshot"]
+__all__ = [
+    "PortfolioConstructionResult",
+    "PortfolioStore",
+    "Position",
+    "PositionTrade",
+    "WeightSnapshot",
+    "compute_hrp_weights",
+    "construct_portfolio",
+]

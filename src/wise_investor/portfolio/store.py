@@ -27,13 +27,12 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from wise_investor.config import settings
-
 
 logger = logging.getLogger(__name__)
 

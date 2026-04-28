@@ -27,6 +27,8 @@ dependencies = [
     "networkx>=3.2",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
+    # Scientific computation: hierarchical clustering for HRP (Stage 6).
+    "scipy>=1.13",
 ]
 
 [project.optional-dependencies]
