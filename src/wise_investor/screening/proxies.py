@@ -28,18 +28,15 @@ Notable choices:
 from __future__ import annotations
 
 import statistics
-from typing import Iterable
+from collections.abc import Iterable
 
 from wise_investor.screening.types import (
     AnnualFinancials,
     BottleneckProxies,
     FrontierProxies,
     MoatProxies,
-    QuarterlyMargin,
-    SegmentBreakdown,
     TickerFundamentals,
 )
-
 
 # ---------------------------------------------------------------------------
 # Moat proxies
@@ -119,10 +116,7 @@ def compute_moat_proxies(funds: TickerFundamentals) -> MoatProxies:
     margin_values = [
         q.gross_margin for q in funds.quarterly_margins if q.gross_margin is not None
     ]
-    if len(margin_values) >= 2:
-        own_std = statistics.stdev(margin_values)
-    else:
-        own_std = None
+    own_std = statistics.stdev(margin_values) if len(margin_values) >= 2 else None
 
     if own_std is not None and funds.industry_gross_margin_3y_std:
         gm_ratio = own_std / funds.industry_gross_margin_3y_std
@@ -156,8 +150,21 @@ def compute_frontier_proxies(funds: TickerFundamentals) -> FrontierProxies:
     of new segments added in the last 5 fiscal years. The substantive
     judgment — imitation evidence, analyst recognition — is deferred
     to Stage 3 LLM per §17.
+
+    Calibration finding (2026-04, 17/30 manifest tickers): every
+    ledger entry showed years_since=0 because the live + historical
+    adapters fall back to `single_segment_default(fiscal_year=latest)`
+    when no segment table is available. A length-1 history with the
+    default placeholder is NOT real data — it's an explicit "no
+    segment disclosure" signal. Treat it as such (return None for
+    both fields), so `_evaluate_frontier` routes the axis to
+    NEED_LLM rather than auto-FAILing on a synthetic 0-year span.
     """
-    if not funds.segments_history:
+    real_history = tuple(
+        sb for sb in funds.segments_history
+        if sb.source != "single_segment_default"
+    )
+    if not real_history:
         return FrontierProxies(
             years_since_first_segment_introduction=None,
             new_segments_added_5y=None,
@@ -166,8 +173,8 @@ def compute_frontier_proxies(funds: TickerFundamentals) -> FrontierProxies:
     # Earliest fiscal year for which we have segment data — reading
     # the history conservatively as "segments existed at this point."
     # Without finer-grained launch dates, this is the best proxy.
-    earliest_year = min(s.fiscal_year for s in funds.segments_history)
-    latest_year = max(s.fiscal_year for s in funds.segments_history)
+    earliest_year = min(s.fiscal_year for s in real_history)
+    latest_year = max(s.fiscal_year for s in real_history)
     years_since = latest_year - earliest_year
 
     # Count of segment names that appear in any of the last 5 fiscal
@@ -175,13 +182,13 @@ def compute_frontier_proxies(funds: TickerFundamentals) -> FrontierProxies:
     cutoff_year = latest_year - 5
     early_names = {
         seg.name
-        for sb in funds.segments_history
+        for sb in real_history
         if sb.fiscal_year <= cutoff_year
         for seg in sb.all_segments
     }
     recent_names = {
         seg.name
-        for sb in funds.segments_history
+        for sb in real_history
         if sb.fiscal_year > cutoff_year
         for seg in sb.all_segments
     }

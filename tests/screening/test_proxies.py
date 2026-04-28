@@ -17,7 +17,6 @@ from wise_investor.screening.types import (
     TickerFundamentals,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -306,6 +305,51 @@ def test_frontier_no_history_returns_nones() -> None:
     out = compute_frontier_proxies(funds)
     assert out.years_since_first_segment_introduction is None
     assert out.new_segments_added_5y is None
+
+
+def test_frontier_single_segment_default_treated_as_no_data() -> None:
+    """Calibration finding (#1, 2026-04): every adapter falls back to
+    single_segment_default(fiscal_year=latest) when no real segment
+    table is available. The previous code treated that length-1
+    history as 1-year-of-real-data → years_since=0 → §11 auto-FAIL,
+    which auto-FAILed all 17/17 manifest tickers in the first
+    calibration ledger. The fix is to recognize the fallback and
+    return None for both fields so _evaluate_frontier routes the
+    axis to NEED_LLM (matching constitution §17 — "primarily
+    LLM-driven")."""
+    fallback = SegmentBreakdown(
+        primary_segment_exists=True,
+        primary_segment_name="ACME",
+        primary_segment_revenue_share=1.0,
+        all_segments=(Segment(name="ACME", revenue=None, share_of_total=1.0),),
+        fiscal_year=2024,
+        source="single_segment_default",
+    )
+    funds = _make_funds(segments=(fallback,))
+    out = compute_frontier_proxies(funds)
+    assert out.years_since_first_segment_introduction is None
+    assert out.new_segments_added_5y is None
+
+
+def test_frontier_real_single_segment_year_still_zero() -> None:
+    """A NON-fallback single-year segment entry (e.g., source='dart'
+    with one fiscal year of data) is still real data — years_since
+    correctly reads as 0. This is a separate signal from the
+    fallback case: the company genuinely has only 1 year of segment
+    history, which §11's time gate should fail. The fix above must
+    NOT swallow this case."""
+    real_one_year = SegmentBreakdown(
+        primary_segment_exists=True,
+        primary_segment_name="Foundry",
+        primary_segment_revenue_share=1.0,
+        all_segments=(Segment(name="Foundry", revenue=None, share_of_total=1.0),),
+        fiscal_year=2024,
+        source="dart",  # NOT single_segment_default
+    )
+    funds = _make_funds(segments=(real_one_year,))
+    out = compute_frontier_proxies(funds)
+    assert out.years_since_first_segment_introduction == 0
+    assert out.new_segments_added_5y == 1  # 1 new segment within the 5y cutoff
 
 
 # ---------------------------------------------------------------------------
