@@ -325,7 +325,18 @@ def _build_annual(entry: Any, tax_rate: float) -> AnnualFinancials | None:
     equity = extract_field(entry, "total_stockholders_equity")
     cash = extract_field(entry, "cash_and_cash_equivalents")
     if equity is not None:
-        invested_capital: float | None = (debt or 0.0) + equity - (cash or 0.0)
+        ic_raw = (debt or 0.0) + equity - (cash or 0.0)
+        # Phase A guard (HD calibration finding, 2026-04): the formula
+        # debt + equity - cash flips negative for buyback-heavy
+        # companies whose accumulated cash exceeds debt + equity.
+        # ROIC = NOPAT / IC then becomes a sign-flipped pseudo-number
+        # (HD FY2017: IC=-0.58B, NOPAT=+11.6B → ROIC=-1993%) that
+        # contaminates the §10 advantage calculation downstream.
+        # Refusing to compute it is more honest than reporting a
+        # nonsensical value. The deeper fix — debt extraction
+        # auditing + IC formula revision — is tracked separately as
+        # the #3-deep ("Phase B") infrastructure item.
+        invested_capital: float | None = ic_raw if ic_raw > 0 else None
     else:
         invested_capital = None
 

@@ -195,6 +195,51 @@ def test_missing_debt_treated_as_zero() -> None:
     assert funds.annual[0].invested_capital == 500 - 100
 
 
+def test_negative_invested_capital_yields_none() -> None:
+    """Phase A guard (HD calibration finding, 2026-04): when
+    debt + equity - cash flips negative — buyback-heavy companies
+    whose accumulated cash exceeds debt + equity — ROIC = NOPAT / IC
+    becomes a sign-flipped pseudo-number. Refuse to compute IC at
+    all so downstream proxies (§10 advantage, peer median) don't
+    inherit the corruption.
+
+    HD FY2017 was the canonical case:
+      debt=1.56B, equity=1.45B, cash=3.60B → IC=-0.58B
+      NOPAT=+11.6B → ROIC=-1993% (clearly nonsensical)
+    """
+    bs = [
+        _Item("us-gaap_LongTermDebt", 1_560_000_000),
+        _Item("us-gaap_StockholdersEquity", 1_454_000_000),
+        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 3_595_000_000),
+    ]
+    entry = _Entry(year=2017, report=_Report(
+        ic=[_Item("us-gaap_OperatingIncomeLoss", 14_681_000_000)],
+        bs=bs,
+    ))
+    client = _StubClient(annual=[entry])
+    funds = fetch_live_fundamentals_us("TEST", client=client)
+    assert funds.annual[0].invested_capital is None
+    # NOPAT is still computable — the guard only refuses IC.
+    assert funds.annual[0].nopat is not None
+
+
+def test_zero_invested_capital_yields_none() -> None:
+    """Edge of the guard: IC == 0 should also be refused (avoids
+    division by zero in the ROIC computation downstream)."""
+    bs = [
+        _Item("us-gaap_LongTermDebt", 100),
+        _Item("us-gaap_StockholdersEquity", 200),
+        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 300),  # exactly cancels
+    ]
+    entry = _Entry(year=2024, report=_Report(
+        ic=[_Item("us-gaap_OperatingIncomeLoss", 50)],
+        bs=bs,
+    ))
+    client = _StubClient(annual=[entry])
+    funds = fetch_live_fundamentals_us("TEST", client=client)
+    assert funds.annual[0].invested_capital is None
+
+
 def test_no_operating_income_yields_none_nopat() -> None:
     bs = [_Item("us-gaap_StockholdersEquity", 200), _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 50)]
     entry = _Entry(year=2024, report=_Report(ic=[], bs=bs))
