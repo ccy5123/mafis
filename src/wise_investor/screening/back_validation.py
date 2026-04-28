@@ -42,8 +42,8 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
 
 from wise_investor.screening import CONSTITUTION_VERSION
 from wise_investor.screening.historical_adapter import (
@@ -61,7 +61,6 @@ from wise_investor.screening.types import (
     PrefilterResult,
     TickerFundamentals,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +139,7 @@ class BackValidationSummary:
         else:
             self.n_rejected += 1
 
-    def finalize(self) -> "BackValidationSummary":
+    def finalize(self) -> BackValidationSummary:
         """Compute aggregate stats from the per-ticker records."""
         advanced_excess = [
             r.return_outcome.excess_return
@@ -289,6 +288,7 @@ def back_validate_ticker(
     fetcher: Callable | None = None,
     price_return_fetcher: PriceReturnFetcher | None = None,
     cache: bool = True,
+    source: str = "finnhub",
 ) -> TickerBackValidation:
     """Run the full back-validation flow on one ticker.
 
@@ -297,6 +297,15 @@ def back_validate_ticker(
        for axes that passed at step 1.
     3. Fetch (ticker, benchmark) returns over [calibration_date, horizon_date].
     4. Build a TickerBackValidation record.
+
+    The `source` argument selects which historical adapter to use:
+      - "finnhub" (default): Finnhub /stock/financials-reported with
+        exact filed_date filtering. Returns ~15 years of US history;
+        recommended for any 5-year horizon back-validation.
+      - "yfinance": legacy yfinance-backed adapter. Free of API keys
+        but limited to ~4 years of history; insufficient for the
+        constitution's §22 5-year horizon. Kept here for tests that
+        rely on the original adapter behavior.
     """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
@@ -304,9 +313,8 @@ def back_validate_ticker(
         calibration_date.day,
     )
 
-    # Stage 2 at calibration_date.
-    funds_calib = fetch_historical_fundamentals(
-        symbol, calibration_date, fetcher=fetcher, cache=cache,
+    funds_calib = _fetch_for_source(
+        source, symbol, calibration_date, fetcher=fetcher, cache=cache,
     )
     primary_seg = (
         funds_calib.segments_history[-1]
@@ -315,9 +323,8 @@ def back_validate_ticker(
     )
     prefilter = evaluate_ticker(funds_calib, primary_seg)
 
-    # Per-axis persistence at horizon_date.
-    funds_horizon = fetch_historical_fundamentals(
-        symbol, horizon_date, fetcher=fetcher, cache=cache,
+    funds_horizon = _fetch_for_source(
+        source, symbol, horizon_date, fetcher=fetcher, cache=cache,
     )
     persistence: list[AxisPersistenceOutcome] = []
 
@@ -414,8 +421,13 @@ def back_validate_universe(
     fetcher: Callable | None = None,
     price_return_fetcher: PriceReturnFetcher | None = None,
     cache: bool = True,
+    source: str = "finnhub",
 ) -> BackValidationSummary:
-    """Run back_validate_ticker across a list of symbols and aggregate."""
+    """Run back_validate_ticker across a list of symbols and aggregate.
+
+    `source` is forwarded to each ticker (see `back_validate_ticker`
+    for valid values).
+    """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
         calibration_date.month,
@@ -436,11 +448,38 @@ def back_validate_universe(
                 fetcher=fetcher,
                 price_return_fetcher=price_return_fetcher,
                 cache=cache,
+                source=source,
             )
             summary.add(record)
         except Exception as e:
             logger.warning("back_validate_ticker failed for %s: %s", s, e)
     return summary.finalize()
+
+
+def _fetch_for_source(
+    source: str,
+    symbol: str,
+    as_of_date: dt.date,
+    *,
+    fetcher: Callable | None,
+    cache: bool,
+) -> TickerFundamentals:
+    """Dispatch to the right historical adapter.
+
+    Tests that pass a custom `fetcher` get yfinance-style behavior
+    (the fetcher hook is part of that adapter's API). Production runs
+    leave `fetcher=None` and route to Finnhub by default for richer
+    history.
+    """
+    if source == "finnhub" and fetcher is None:
+        from wise_investor.screening.historical_adapter_finnhub import (
+            fetch_historical_fundamentals_finnhub,
+        )
+        return fetch_historical_fundamentals_finnhub(symbol, as_of_date)
+    # yfinance path (or any custom fetcher injection)
+    return fetch_historical_fundamentals(
+        symbol, as_of_date, fetcher=fetcher, cache=cache,
+    )
 
 
 # ---------------------------------------------------------------------------
