@@ -394,3 +394,120 @@ def test_cache_returns_peer_aggregate_result(tmp_path: Path) -> None:
     )
     assert isinstance(second, PeerAggregateResult)
     assert second.n_peers_attempted == 1
+
+
+# ---------------------------------------------------------------------------
+# as_of_date filtering — lookahead-bias guard for back-validation (#2)
+# ---------------------------------------------------------------------------
+
+
+def _public_entry(
+    year: int, *, filed: str, **kwargs
+) -> _Entry:
+    """Build a stub entry with an explicit filed_date so the
+    historical_adapter_finnhub._is_public_by filter can match."""
+    e = _annual(year, **kwargs)
+    e.filed_date = filed  # type: ignore[attr-defined]
+    e.end_date = f"{year}-12-31"  # type: ignore[attr-defined]
+    return e
+
+
+def test_as_of_date_filters_out_future_filings(tmp_path: Path) -> None:
+    """Calibration finding (#2, 2026-04): without as_of_date filtering,
+    a 2018-06-30 calibration would pull peer financials filed in 2024
+    and use them as the "industry baseline" — straight lookahead bias.
+
+    With as_of_date set, peer entries filed AFTER that date must be
+    excluded. The peer's avg_roic_3y should reflect only filings
+    public on the calibration date.
+    """
+    # Peer 'A' has 5 annual entries: 2014, 2015, 2016, 2017, 2018.
+    # Each filed in March of the following year.
+    entries = [
+        _public_entry(
+            2014, filed="2015-03-15",
+            revenue=1000, gross=500, operating=130, debt=50, equity=900, cash=50,
+        ),
+        _public_entry(
+            2015, filed="2016-03-15",
+            revenue=1000, gross=500, operating=130, debt=50, equity=900, cash=50,
+        ),
+        _public_entry(
+            2016, filed="2017-03-15",
+            revenue=1000, gross=500, operating=130, debt=50, equity=900, cash=50,
+        ),
+        _public_entry(
+            2017, filed="2018-03-15",
+            revenue=1000, gross=500, operating=130, debt=50, equity=900, cash=50,
+        ),
+        _public_entry(
+            2018, filed="2019-03-15",
+            revenue=1000, gross=500, operating=130, debt=50, equity=900, cash=50,
+        ),
+    ]
+    client = _StubClient(
+        peer_list=["A"],
+        financials_by_symbol={"A": entries},
+    )
+
+    # Calibration on 2018-06-30: only 2014/2015/2016/2017 should be
+    # public (filed by Mar 2018). The 2018 fiscal year was filed in
+    # Mar 2019 — must be excluded.
+    result = compute_industry_aggregates(
+        "NVDA", client=client,
+        cache=False, cache_dir=tmp_path,
+        as_of_date=dt.date(2018, 6, 30),
+    )
+    detail = result.peers_used[0]
+    # n_years counts ALL entries received from the API (pre-filter).
+    # The post-filter entries are what matter for ROIC; we expose
+    # their count via the gm_observations / avg_roic_3y fields.
+    assert len(detail.gm_observations) <= 4  # at most 4 public-by-2018-06-30
+    assert detail.avg_roic_3y is not None  # 4 valid years → avg computed
+
+
+def test_as_of_date_none_uses_all_entries(tmp_path: Path) -> None:
+    """Live-mode default: as_of_date=None → no filtering, all entries
+    used. Confirms the new parameter is opt-in for back-validation
+    and doesn't change live-mode behavior."""
+    entries = [
+        _public_entry(
+            year, filed=f"{year + 1}-03-15",
+            revenue=1000, gross=500, operating=130, debt=50, equity=900, cash=50,
+        )
+        for year in (2020, 2021, 2022, 2023, 2024)
+    ]
+    client = _StubClient(
+        peer_list=["A"],
+        financials_by_symbol={"A": entries},
+    )
+    result = compute_industry_aggregates(
+        "NVDA", client=client,
+        cache=False, cache_dir=tmp_path,
+        as_of_date=None,
+    )
+    detail = result.peers_used[0]
+    # All 5 entries used (no filter applied)
+    assert detail.n_years == 5
+
+
+def test_cache_separates_by_as_of_date(tmp_path: Path) -> None:
+    """Two back-validation runs at different calibration dates must
+    NOT collide in cache — that would let stale 2018 medians leak
+    into a 2020 calibration run.
+    """
+    client = _StubClient(
+        peer_list=["A"],
+        default_financials=_profitable_peer([2022, 2023, 2024]),
+    )
+    compute_industry_aggregates(
+        "NVDA", client=client, cache=True, cache_dir=tmp_path,
+        as_of_date=dt.date(2018, 6, 30),
+    )
+    compute_industry_aggregates(
+        "NVDA", client=client, cache=True, cache_dir=tmp_path,
+        as_of_date=dt.date(2020, 6, 30),
+    )
+    # Two separate cache files should exist
+    cache_files = list(tmp_path.glob("*.json"))
+    assert len(cache_files) == 2

@@ -103,6 +103,7 @@ def compute_industry_aggregates(
     cache: bool = True,
     cache_dir: Path | None = None,
     today: dt.date | None = None,
+    as_of_date: dt.date | None = None,
 ) -> PeerAggregateResult:
     """Pull peers and compute aggregates.
 
@@ -121,12 +122,26 @@ def compute_industry_aggregates(
             (symbol, today) so a re-run pays no API cost.
         cache_dir: Override for the cache directory (tests use tmp_path).
         today: Override for "today" (cache key + freshness check).
+        as_of_date: When set, peer financials are filtered to filings
+            public on or before this date (back-validation use). When
+            None, peer financials are used as-is — the live-screening
+            default. **This is the lookahead-bias guard:** without
+            as_of_date filtering, calibrating constitution v2.0
+            against 2018-06-30 would inadvertently use 2024 industry
+            medians as the "industry" baseline, contaminating the
+            Stage 2 advantage calculation with future information.
     """
     today = today or dt.date.today()
     cache_dir = cache_dir if cache_dir is not None else DEFAULT_CACHE_DIR
 
+    # Cache key includes the as_of_date so a 2018 calibration's peer
+    # medians don't collide with today's. Use as_of_date when present
+    # (the meaningful temporal coordinate); fall back to `today` for
+    # live-mode caching.
+    cache_key_date = as_of_date or today
+
     if cache:
-        cached = _load_cached(symbol, today, cache_dir)
+        cached = _load_cached(symbol, cache_key_date, cache_dir)
         if cached is not None:
             return cached
 
@@ -185,7 +200,9 @@ def compute_industry_aggregates(
     per_peer: list[PeerAggregateDetail] = []
     for peer in peer_list:
         try:
-            detail = _build_peer_detail(client, peer, effective_tax_rate)
+            detail = _build_peer_detail(
+                client, peer, effective_tax_rate, as_of_date=as_of_date,
+            )
         except Exception as e:
             logger.warning("peer %s aggregation failed: %s", peer, e)
             continue
@@ -221,7 +238,7 @@ def compute_industry_aggregates(
     )
 
     if cache:
-        _write_cache(symbol, today, cache_dir, result)
+        _write_cache(symbol, cache_key_date, cache_dir, result)
     return result
 
 
@@ -234,12 +251,27 @@ def _build_peer_detail(
     client: PeerCapableClient,
     peer_symbol: str,
     tax_rate: float,
+    *,
+    as_of_date: dt.date | None = None,
 ) -> PeerAggregateDetail:
-    """Compute one peer's 3y avg ROIC + per-year gross margins."""
+    """Compute one peer's 3y avg ROIC + per-year gross margins.
+
+    When `as_of_date` is set, peer entries are filtered to filings
+    public on/before that date (lookahead-bias guard for back-
+    validation). When None, all entries are used (live-mode default).
+    """
     from wise_investor.data.finnhub import extract_field, total_debt
 
     resp = client.financials(peer_symbol, freq="annual")
     entries = list(getattr(resp, "data", []) or [])
+
+    if as_of_date is not None:
+        # Reuse the same filing-lag logic as the historical adapter to
+        # keep the lookahead semantics consistent across the codebase.
+        from wise_investor.screening.historical_adapter_finnhub import (
+            _is_public_by,
+        )
+        entries = [e for e in entries if _is_public_by(e, as_of_date)]
 
     yearly_roic: list[float] = []
     yearly_gm: list[float] = []

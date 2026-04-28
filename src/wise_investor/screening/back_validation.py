@@ -289,6 +289,7 @@ def back_validate_ticker(
     price_return_fetcher: PriceReturnFetcher | None = None,
     cache: bool = True,
     source: str = "finnhub",
+    with_industry_aggregates: bool = True,
 ) -> TickerBackValidation:
     """Run the full back-validation flow on one ticker.
 
@@ -306,6 +307,13 @@ def back_validate_ticker(
         but limited to ~4 years of history; insufficient for the
         constitution's §22 5-year horizon. Kept here for tests that
         rely on the original adapter behavior.
+
+    `with_industry_aggregates`: when True (default for source='finnhub'),
+    runs the peer aggregator with as_of_date=calibration_date so the
+    industry ROIC median used in §10 advantage calculation reflects
+    historical peer state, not today's. Set False when running tests
+    that don't need network calls or when source='yfinance' (which
+    has no peer endpoint).
     """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
@@ -313,8 +321,16 @@ def back_validate_ticker(
         calibration_date.day,
     )
 
+    industry_aggregates = None
+    if with_industry_aggregates and source == "finnhub" and fetcher is None:
+        industry_aggregates = _fetch_industry_aggregates_at(
+            symbol, calibration_date,
+        )
+
     funds_calib = _fetch_for_source(
-        source, symbol, calibration_date, fetcher=fetcher, cache=cache,
+        source, symbol, calibration_date,
+        fetcher=fetcher, cache=cache,
+        industry_aggregates=industry_aggregates,
     )
     primary_seg = (
         funds_calib.segments_history[-1]
@@ -463,6 +479,7 @@ def _fetch_for_source(
     *,
     fetcher: Callable | None,
     cache: bool,
+    industry_aggregates: object | None = None,
 ) -> TickerFundamentals:
     """Dispatch to the right historical adapter.
 
@@ -475,11 +492,43 @@ def _fetch_for_source(
         from wise_investor.screening.historical_adapter_finnhub import (
             fetch_historical_fundamentals_finnhub,
         )
-        return fetch_historical_fundamentals_finnhub(symbol, as_of_date)
-    # yfinance path (or any custom fetcher injection)
+        return fetch_historical_fundamentals_finnhub(
+            symbol, as_of_date, industry_aggregates=industry_aggregates,
+        )
+    # yfinance path (or any custom fetcher injection): the legacy
+    # adapter has no industry_aggregates parameter, so the value is
+    # silently dropped. Tests that exercise the yfinance path don't
+    # care about peer medians anyway.
     return fetch_historical_fundamentals(
         symbol, as_of_date, fetcher=fetcher, cache=cache,
     )
+
+
+def _fetch_industry_aggregates_at(
+    symbol: str, as_of_date: dt.date,
+) -> object | None:
+    """Run the peer aggregator for a single back-validation ticker.
+
+    Returns an `IndustryAggregates` (or None on failure). Errors are
+    swallowed — peer aggregation is an enrichment, not a hard
+    requirement. A missing median just means the moat axis stays in
+    NEED_LLM territory exactly as it would without this enrichment.
+    """
+    try:
+        from wise_investor.screening.peer_aggregator import (
+            compute_industry_aggregates,
+        )
+        result = compute_industry_aggregates(
+            symbol, as_of_date=as_of_date,
+        )
+        return result.industry_aggregates
+    except Exception as e:
+        logger.warning(
+            "peer_aggregator failed for %s @ %s: %s — proceeding without "
+            "industry median",
+            symbol, as_of_date, e,
+        )
+        return None
 
 
 # ---------------------------------------------------------------------------
