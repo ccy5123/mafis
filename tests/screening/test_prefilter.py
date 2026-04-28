@@ -7,6 +7,7 @@ from wise_investor.screening.prefilter import (
     BOTTLENECK_TOP5_CUSTOMER_SHARE_MIN,
     FRONTIER_MIN_YEARS_SINCE_INTRO,
     MOAT_ROIC_ADVANTAGE_MIN,
+    _apply_hierarchy_gate,
     evaluate_ticker,
 )
 from wise_investor.screening.segments import (
@@ -15,6 +16,7 @@ from wise_investor.screening.segments import (
 )
 from wise_investor.screening.types import (
     AnnualFinancials,
+    AxisVerdict,
     QuarterlyMargin,
     Segment,
     SegmentBreakdown,
@@ -233,12 +235,20 @@ def test_frontier_need_llm_when_old_enough() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_bottleneck_fail_when_top5_below_threshold() -> None:
+def test_bottleneck_below_threshold_still_need_llm() -> None:
+    """Calibration finding (#5, 2026-04): Stage 2 must NOT auto-FAIL
+    on top-5 < 40%. Constitution §12 condition 1 has two alternative
+    paths (5x downstream OR 40% top-5), and the threshold check on
+    path B is necessary but not sufficient — Risk Factors materiality
+    is also required (LLM-only). top-5 < 40% just means path B is
+    closed; Stage 3 must still verify path A before concluding."""
     funds = _funds(top5=0.30)
     seg = single_segment_default("TEST", fiscal_year=2024)
     result = evaluate_ticker(funds, seg)
-    assert result.bottleneck.verdict == "FAIL"
-    assert "top-5 customer share" in result.bottleneck.reason
+    assert result.bottleneck.verdict == "NEED_LLM"
+    # The reason should explicitly tell Stage 3 that path B is not
+    # met but path A is still open.
+    assert "1-A" in result.bottleneck.reason or "5×" in result.bottleneck.reason
 
 
 def test_bottleneck_need_llm_when_top5_clears_threshold() -> None:
@@ -291,72 +301,73 @@ def test_hierarchy_advances_when_two_axes_potential_with_growth() -> None:
     assert "bottleneck" in result.need_llm_axes
 
 
-def test_hierarchy_rejects_when_no_growth_axis() -> None:
-    """Moat NEED_LLM, but new_frontier and bottleneck both FAIL → no
-    growth axis cleared the gate → REJECT.
+def _make_axis_verdict(axis: str, verdict: str) -> AxisVerdict:
+    """Hand-build an AxisVerdict for hierarchy-gate unit tests.
+
+    Calibration finding (#5, 2026-04): bottleneck-axis Stage 2 verdict
+    can no longer be FAIL by design — every code path emits NEED_LLM
+    per constitution §12. Tests that previously forced bottleneck FAIL
+    via top-5 manipulation can't replicate that scenario through
+    `evaluate_ticker` anymore. Use this helper to feed the hierarchy
+    gate directly with the verdict shape we want to test.
     """
-    funds = _funds(
-        annual=(
-            _annual(2022, nopat=20, capital=100),
-            _annual(2023, nopat=21, capital=100),
-            _annual(2024, nopat=22, capital=100),
-        ),
-        industry_roic=0.10,
-        # No segment history → frontier NEED_LLM (still potential)
-        # …but we need to FAIL frontier explicitly to test "no growth"
-        segments=(
-            SegmentBreakdown(
-                primary_segment_exists=True,
-                primary_segment_name="Single",
-                primary_segment_revenue_share=1.0,
-                all_segments=(
-                    Segment(name="Single", revenue=None, share_of_total=1.0),
-                ),
-                fiscal_year=2024,  # only 1 year → FAIL
-                source="stub",
-            ),
-        ),
-        top5=0.10,  # below threshold → bottleneck FAIL
+    return AxisVerdict(axis=axis, verdict=verdict, reason="test", details={})
+
+
+def test_hierarchy_rejects_when_no_growth_axis() -> None:
+    """Constitution §9: a growth axis (new_frontier OR bottleneck) must
+    clear the gate. moat alone cannot advance even if it's a potential
+    pass."""
+    moat = _make_axis_verdict("moat", "NEED_LLM")
+    frontier = _make_axis_verdict("new_frontier", "FAIL")
+    bottleneck = _make_axis_verdict("bottleneck", "FAIL")
+    decision, _passed, _need_llm, reason = _apply_hierarchy_gate(
+        moat, frontier, bottleneck
     )
-    seg = single_segment_default("TEST", fiscal_year=2024)
-    result = evaluate_ticker(funds, seg)
-    assert result.hierarchy_decision == "REJECT"
-    assert result.excluded_reason is not None
-    assert (
-        "no growth axis" in result.excluded_reason
-        or "<2 axis" in result.excluded_reason
-        or "only" in result.excluded_reason
-    )
+    assert decision == "REJECT"
+    assert reason is not None
+    assert "growth axis" in reason
 
 
 def test_hierarchy_rejects_when_only_one_axis_potential() -> None:
-    """Single axis potential pass → REJECT (need 2+)."""
-    funds = _funds(
-        annual=(
-            _annual(2022, nopat=20, capital=100),
-            _annual(2023, nopat=21, capital=100),
-            _annual(2024, nopat=22, capital=100),
-        ),
-        industry_roic=0.10,
-        # No segments → frontier NEED_LLM (potential pass)
-        # No customer disclosure → bottleneck NEED_LLM (potential pass)
-        # → 3 potential, growth present → would advance.
-        # Force frontier and bottleneck to FAIL:
-        segments=(
-            SegmentBreakdown(
-                primary_segment_exists=True,
-                primary_segment_name="Solo",
-                primary_segment_revenue_share=1.0,
-                all_segments=(Segment(name="Solo", revenue=None, share_of_total=1.0),),
-                fiscal_year=2024,
-                source="stub",
-            ),
-        ),
-        top5=0.05,  # very low → FAIL
+    """Constitution §9: 2+ axes must clear the gate. A single potential
+    pass — even if that axis is a growth axis — is insufficient."""
+    moat = _make_axis_verdict("moat", "FAIL")
+    frontier = _make_axis_verdict("new_frontier", "NEED_LLM")
+    bottleneck = _make_axis_verdict("bottleneck", "FAIL")
+    decision, _passed, _need_llm, reason = _apply_hierarchy_gate(
+        moat, frontier, bottleneck
     )
-    seg = single_segment_default("TEST", fiscal_year=2024)
-    result = evaluate_ticker(funds, seg)
-    assert result.hierarchy_decision == "REJECT"
+    assert decision == "REJECT"
+    assert reason is not None
+    assert "only 1" in reason or "<2" in reason or "need 2+" in reason
+
+
+def test_hierarchy_advances_with_two_axes_including_growth() -> None:
+    """Constitution §9 boundary: minimum-viable advance — moat + one
+    growth axis (frontier OR bottleneck) with NEED_LLM each."""
+    moat = _make_axis_verdict("moat", "NEED_LLM")
+    frontier = _make_axis_verdict("new_frontier", "NEED_LLM")
+    bottleneck = _make_axis_verdict("bottleneck", "FAIL")
+    decision, _passed, _need_llm, _reason = _apply_hierarchy_gate(
+        moat, frontier, bottleneck
+    )
+    assert decision == "ADVANCE_TO_STAGE_3"
+
+
+def test_hierarchy_rejects_when_only_moat_passes() -> None:
+    """Constitution §9: even moat=PASS alone fails the gate without
+    a growth-axis companion. Guards against future drift toward
+    moat-as-sufficient."""
+    moat = _make_axis_verdict("moat", "PASS")
+    frontier = _make_axis_verdict("new_frontier", "FAIL")
+    bottleneck = _make_axis_verdict("bottleneck", "FAIL")
+    decision, _passed, _need_llm, reason = _apply_hierarchy_gate(
+        moat, frontier, bottleneck
+    )
+    assert decision == "REJECT"
+    assert reason is not None
+    assert "growth axis" in reason
 
 
 # ---------------------------------------------------------------------------

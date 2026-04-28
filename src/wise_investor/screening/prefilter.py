@@ -22,8 +22,8 @@ the LLM would have approved.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict
-from typing import Iterable
 
 from wise_investor.screening import CONSTITUTION_VERSION
 from wise_investor.screening.proxies import (
@@ -41,7 +41,6 @@ from wise_investor.screening.types import (
     SegmentBreakdown,
     TickerFundamentals,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constitution §15 thresholds — kept as module constants so calibration
@@ -184,9 +183,33 @@ def _evaluate_frontier(proxies: FrontierProxies) -> AxisVerdict:
 
 
 def _evaluate_bottleneck(proxies: BottleneckProxies) -> AxisVerdict:
+    """Bottleneck-axis verdict at Stage 2 (constitution §12).
+
+    Calibration finding (#5, 2026-04): the prior implementation auto-
+    FAILed any ticker with top-5 customer share below 40%. That's
+    NOT in the constitution. Reading §12 condition 1 carefully:
+
+      Path A: combined revenue of companies disclosing this firm as a
+              critical supplier ≥ 5× this firm's revenue. Pure LLM —
+              requires Risk Factors parsing across the customer set.
+      Path B: top-5 ≥ 40% AND Risk Factors disclosure confirming
+              materiality. The threshold check is necessary but NOT
+              sufficient — the materiality verification is also LLM.
+
+    No value of top5_customer_share alone produces a verdict. All
+    other §12 conditions (replacement difficulty, position duration,
+    auto-PASS 1-5) are explicitly qualitative.
+
+    Therefore: every bottleneck verdict at Stage 2 is NEED_LLM. The
+    top-5 figure is surfaced verbatim in `details` so Stage 3 sees
+    it; the `reason` field tells Stage 3 which §12 path is plausibly
+    open given the available data.
+    """
     details = asdict(proxies)
 
-    # Diversification signals → constitution Auto-PASS 4 trigger.
+    # Diversification signals → §12 auto-PASS 4 trigger; LLM judges
+    # severity. Surface this first because it overrides the
+    # path-A/path-B framing below.
     if proxies.diversification_attempt_signals > 0:
         return AxisVerdict(
             axis="bottleneck",
@@ -199,43 +222,36 @@ def _evaluate_bottleneck(proxies: BottleneckProxies) -> AxisVerdict:
             details=details,
         )
 
-    if proxies.top5_customer_share is None:
-        # No customer concentration data — the bottleneck rule
-        # (§12 condition 1) requires either a 5x downstream dependency
-        # ratio (LLM-side) or a 40% top-5 share (quant-side). With
-        # neither, we can only delegate.
-        return AxisVerdict(
-            axis="bottleneck",
-            verdict="NEED_LLM",
-            reason=(
-                "Customer concentration undisclosed; Stage 3 must verify "
-                "downstream dependency from 10-K Risk Factors or other "
-                "qualitative evidence"
-            ),
-            details=details,
+    top5 = proxies.top5_customer_share
+    threshold = BOTTLENECK_TOP5_CUSTOMER_SHARE_MIN
+
+    if top5 is None:
+        reason = (
+            "Customer concentration undisclosed; Stage 3 must check "
+            "§12 condition 1-A (5× downstream revenue ratio) and Risk "
+            "Factors materiality, then verify replacement difficulty "
+            "(§12 cond. 2) and position duration (§12 cond. 3)"
+        )
+    elif top5 >= threshold:
+        reason = (
+            f"top-5 customer share {top5:.2f} ≥ {threshold:.2f} (path 1-B "
+            "threshold satisfied); Stage 3 must verify Risk Factors "
+            "materiality + replacement difficulty (§12 cond. 2) + "
+            "position duration (§12 cond. 3)"
+        )
+    else:
+        reason = (
+            f"top-5 customer share {top5:.2f} < {threshold:.2f} (path 1-B "
+            "threshold not met); Stage 3 must check §12 condition 1-A "
+            "(5× downstream revenue ratio via Risk Factors) before "
+            "concluding — the §12 path-A and path-B are alternatives, "
+            "not joint requirements"
         )
 
-    if proxies.top5_customer_share < BOTTLENECK_TOP5_CUSTOMER_SHARE_MIN:
-        return AxisVerdict(
-            axis="bottleneck",
-            verdict="FAIL",
-            reason=(
-                f"top-5 customer share {proxies.top5_customer_share:.2f} < "
-                f"{BOTTLENECK_TOP5_CUSTOMER_SHARE_MIN:.2f} threshold"
-            ),
-            details=details,
-        )
-
-    # Quant side OK; replacement difficulty (§12 condition 2) and
-    # division-of-labor verification are qualitative.
     return AxisVerdict(
         axis="bottleneck",
         verdict="NEED_LLM",
-        reason=(
-            "Customer concentration consistent with downstream dependency; "
-            "Stage 3 must verify replacement difficulty and division-of-"
-            "labor character"
-        ),
+        reason=reason,
         details=details,
     )
 
