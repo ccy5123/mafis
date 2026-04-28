@@ -993,30 +993,21 @@ def run_crew_synthesis(
 
     t_start = time.perf_counter()
 
-    # -- User tips: pull and format once at the top so every agent's
-    # user prompt carries the same `<user_provided_tips>` block. We
-    # only fetch when run_tag is supplied — without it we can't dedupe
-    # consumed tips across runs, which would mean the same tip injects
-    # into every report indefinitely.
+    # -- User tips: NOT injected into agent prompts. Per
+    # docs/constitution.md §7, the tip channel is decoupled from
+    # analysis triggering: tips are still logged via the bot
+    # (TipStore / classifier), but they NEVER reach any LLM in any
+    # stage. Universe membership and screening must remain a function
+    # of objective criteria + the rubric (Commitment 1), not of which
+    # messages the user happens to forward.
+    #
+    # Step 8 of the v2 work order will rebuild the tip surface as a
+    # post-Stage-4 *annotation* (the user sees "you mentioned this N
+    # days ago" alongside the system's verdict) — purely metadata,
+    # never prompt context. Until that surface is built, this block
+    # stays empty.
     tips_block = ""
     tips_bundle = None
-    if run_tag:
-        try:
-            from wise_investor.data.tip_feed import (
-                fetch_tips_for_run,
-                format_tips_block,
-            )
-            tips_bundle = fetch_tips_for_run(symbol, run_tag)
-            tips_block = format_tips_block(tips_bundle, symbol)
-            if tips_bundle and not tips_bundle.is_empty:
-                log(
-                    f"[crew] tips: {len(tips_bundle.ticker)} ticker, "
-                    f"{len(tips_bundle.macro)} macro injected"
-                )
-        except Exception as e:
-            logger.warning("tip_feed gather failed (%s); skipping tips.", e)
-            tips_bundle = None
-            tips_block = ""
 
     # -- Economist (macro backdrop, reads value chain + macro snapshot)
     log(f"[crew] Economist on {e_model}")
