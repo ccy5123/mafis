@@ -162,7 +162,11 @@ class AxisVerdict:
 # ---------------------------------------------------------------------------
 
 
-HierarchyDecision = Literal["ADVANCE_TO_STAGE_3", "REJECT"]
+HierarchyDecision = Literal[
+    "ADVANCE_TO_STAGE_3",   # Stage 2 output: quant gate cleared, hand off to Stage 3
+    "ADVANCE_TO_STAGE_4",   # Stage 3 output: LLM gate cleared, hand off to MAFIS engine
+    "REJECT",
+]
 
 
 @dataclass(frozen=True)
@@ -188,6 +192,60 @@ class PrefilterResult:
     need_llm_axes: tuple[str, ...]
 
 
+# ---------------------------------------------------------------------------
+# Stage 3 — light qualitative LLM screening (constitution §18)
+# ---------------------------------------------------------------------------
+
+
+Stage3VerdictKind = Literal["PASS", "FAIL", "INVALID"]
+
+
+@dataclass(frozen=True)
+class Stage3AxisOutcome:
+    """One axis's verdict from the Stage 3 LLM call.
+
+    `INVALID` covers cases where the LLM returned malformed output for
+    this axis (missing field, unknown verdict literal). The integration
+    layer treats INVALID as FAIL per the precision-over-recall
+    commitment, but the original distinction is preserved here for
+    audit.
+
+    `qualifier` carries axis-specific structured detail:
+      - moat:        4-bucket classifier ("intangible" / "switching"
+                     / "network" / "cost") or None
+      - new_frontier: list of imitation evidence items (joined with
+                     "; " on serialization)
+      - bottleneck:  type classifier ("technical" / "resource" /
+                     "regulatory" / "division-of-labor") or None
+    """
+
+    axis: Literal["moat", "new_frontier", "bottleneck"]
+    verdict: Stage3VerdictKind
+    qualifier: str | None
+    reasoning: str
+
+
+@dataclass(frozen=True)
+class Stage3Result:
+    """Full Stage 3 output for one ticker.
+
+    `hierarchy_decision` is the deterministic gate (§9) recomputed
+    from individual axis verdicts; we never trust the LLM's reported
+    decision for the final answer (the LLM's report is preserved in
+    `llm_reported_decision` for audit).
+    """
+
+    symbol: str
+    constitution_version: str
+    moat: Stage3AxisOutcome
+    new_frontier: Stage3AxisOutcome
+    bottleneck: Stage3AxisOutcome
+    hierarchy_decision: HierarchyDecision  # ADVANCE_TO_STAGE_4 or REJECT (deterministic)
+    rejection_reason: str | None
+    llm_reported_decision: str | None  # what the LLM said, for audit
+    raw_llm_output: str  # full raw response, for audit
+
+
 __all__ = [
     "AnnualFinancials",
     "AxisVerdict",
@@ -200,5 +258,8 @@ __all__ = [
     "QuarterlyMargin",
     "Segment",
     "SegmentBreakdown",
+    "Stage3AxisOutcome",
+    "Stage3Result",
+    "Stage3VerdictKind",
     "TickerFundamentals",
 ]

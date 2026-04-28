@@ -55,6 +55,24 @@ def main() -> int:
         action="store_true",
         help="Emit raw JSON output instead of the formatted table.",
     )
+    parser.add_argument(
+        "--with-stage3",
+        action="store_true",
+        help=(
+            "After the Stage 2 quant pre-filter, also run the Stage 3 "
+            "qualitative LLM screen via the active LLM backend. Requires "
+            "Ollama (or the configured backend) to be reachable; falls "
+            "back to REJECT on any LLM failure per Commitment 3."
+        ),
+    )
+    parser.add_argument(
+        "--show-prompt",
+        action="store_true",
+        help=(
+            "Print the Stage 3 prompt that would be sent to the LLM "
+            "(useful for prompt debugging) and exit without calling it."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.fixture.exists():
@@ -137,6 +155,64 @@ def main() -> int:
             f"({(ps.primary_segment_revenue_share or 0):.1%}) "
             f"@ FY{ps.fiscal_year}"
         )
+
+    # --- Stage 3 (optional)
+    if args.show_prompt:
+        from wise_investor.screening.stage3_prompts import render_prompt_for_inspection
+        console.print()
+        console.rule("[bold]Stage 3 prompt (preview only)[/bold]")
+        console.print(render_prompt_for_inspection(funds, result))
+        return 0
+
+    if args.with_stage3:
+        from wise_investor.screening.llm_screening import screen_ticker
+
+        console.print()
+        console.rule("[bold]Stage 3 — qualitative LLM screening[/bold]")
+        if result.hierarchy_decision == "REJECT":
+            console.print(
+                "[yellow]Stage 2 already rejected; skipping Stage 3 LLM call.[/yellow]"
+            )
+            return 0
+
+        stage3 = screen_ticker(funds, result)
+
+        s3_color = "green" if stage3.hierarchy_decision == "ADVANCE_TO_STAGE_4" else "red"
+        decision_text = (
+            "[green]ADVANCE_TO_STAGE_4[/green]"
+            if stage3.hierarchy_decision == "ADVANCE_TO_STAGE_4"
+            else "[red]REJECT[/red]"
+        )
+        console.print(
+            Panel.fit(
+                f"[bold]{stage3.symbol}[/bold]\nStage 3 decision: {decision_text}",
+                border_style=s3_color,
+            )
+        )
+        if stage3.rejection_reason:
+            console.print(f"[yellow]Rejection reason:[/yellow] {stage3.rejection_reason}")
+        if stage3.llm_reported_decision and stage3.llm_reported_decision != stage3.hierarchy_decision:
+            console.print(
+                f"[dim]LLM reported {stage3.llm_reported_decision}; "
+                "caller recomputed gate per §9.[/dim]"
+            )
+
+        s3_table = Table(title="Stage 3 axis outcomes", show_lines=True)
+        s3_table.add_column("Axis", style="bold")
+        s3_table.add_column("Verdict")
+        s3_table.add_column("Qualifier")
+        s3_table.add_column("Reasoning")
+        for outcome in (stage3.moat, stage3.new_frontier, stage3.bottleneck):
+            color = {"PASS": "green", "FAIL": "red", "INVALID": "magenta"}[
+                outcome.verdict
+            ]
+            s3_table.add_row(
+                outcome.axis,
+                f"[{color}]{outcome.verdict}[/{color}]",
+                outcome.qualifier or "—",
+                outcome.reasoning,
+            )
+        console.print(s3_table)
 
     return 0
 
