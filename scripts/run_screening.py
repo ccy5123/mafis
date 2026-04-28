@@ -66,6 +66,16 @@ def main() -> int:
         help="After Stage 2, run Stage 3 LLM screening on advancing tickers.",
     )
     parser.add_argument(
+        "--with-peers",
+        action="store_true",
+        help=(
+            "Compute industry_roic_3y_median and industry_gross_margin_3y_std "
+            "via Finnhub peer aggregation before Stage 2. Adds ~5 API calls "
+            "per US ticker (cached 24h on disk). Korean tickers skip — "
+            "Finnhub peers are sparse for KRX."
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output JSON instead of formatted tables.",
@@ -88,7 +98,7 @@ def main() -> int:
     else:
         symbols = [args.symbol]
 
-    results = _run(symbols, with_stage3=args.with_stage3)
+    results = _run(symbols, with_stage3=args.with_stage3, with_peers=args.with_peers)
 
     if args.json:
         print(json.dumps(_to_json(results), indent=2, default=str))
@@ -103,7 +113,12 @@ def main() -> int:
 # ---------------------------------------------------------------------------
 
 
-def _run(symbols: list[str], *, with_stage3: bool) -> list[dict]:
+def _run(
+    symbols: list[str],
+    *,
+    with_stage3: bool,
+    with_peers: bool = False,
+) -> list[dict]:
     """Screen each symbol; collect (symbol, prefilter, stage3, error) rows."""
     results: list[dict] = []
     with Progress(
@@ -115,9 +130,35 @@ def _run(symbols: list[str], *, with_stage3: bool) -> list[dict]:
         task = prog.add_task("Screening...", total=len(symbols))
         for sym in symbols:
             prog.update(task, description=f"Fetching {sym}...")
-            row: dict = {"symbol": sym, "prefilter": None, "stage3": None, "error": None}
+            row: dict = {
+                "symbol": sym,
+                "prefilter": None,
+                "stage3": None,
+                "error": None,
+            }
             try:
-                funds = fetch_live_fundamentals(sym)
+                # --with-peers: compute industry aggregates first (US tickers
+                # only — Finnhub peers for KRX are sparse, so KR tickers
+                # silently skip the aggregator and proceed without peer
+                # comparison fields).
+                aggs = None
+                if with_peers:
+                    from wise_investor.screening.live_adapter_kr import (
+                        is_korean_symbol,
+                    )
+                    if not is_korean_symbol(sym):
+                        prog.update(task, description=f"Aggregating peers for {sym}...")
+                        from wise_investor.screening.peer_aggregator import (
+                            compute_industry_aggregates,
+                        )
+                        peer_result = compute_industry_aggregates(sym)
+                        aggs = peer_result.industry_aggregates
+
+                prog.update(task, description=f"Fetching {sym}...")
+                funds = fetch_live_fundamentals(
+                    sym,
+                    industry_aggregates=aggs,
+                )
                 primary = (
                     funds.segments_history[-1] if funds.segments_history else None
                 )
