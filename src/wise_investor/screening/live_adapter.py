@@ -1,11 +1,20 @@
-"""Live fundamentals adapter — populates `TickerFundamentals` from Finnhub.
+"""Live fundamentals adapter — dispatcher + Finnhub (US) implementation.
 
-Unlike `historical_adapter.py` (which filters by 90-day filing-lag
-against a historical as-of date for back-validation), this module pulls
-the latest available filings and uses them as point-in-time-now inputs
-for the Stage 2 prefilter — the live screening path.
+Two public entry points:
 
-What this adapter populates today:
+  - `fetch_live_fundamentals(symbol, ...)` — the dispatcher. Inspects
+    the symbol pattern, routes Korean tickers (`.KS`, bare 6-digit, ...)
+    to `live_adapter_kr.fetch_live_fundamentals_kr` (DART-backed) and
+    everything else to `fetch_live_fundamentals_us` (Finnhub-backed).
+    Most callers should use this one — it abstracts the data-source
+    choice from the screening pipeline.
+
+  - `fetch_live_fundamentals_us(symbol, ...)` — explicit Finnhub adapter.
+    Use directly only when you need to bypass the dispatcher (e.g.
+    ADR-listed Korean tickers that Finnhub does cover, where you'd
+    rather use Finnhub's normalized data).
+
+What `fetch_live_fundamentals_us` populates today:
   - `annual` fiscal-year history from Finnhub `/stock/financials-reported`
     (revenue, gross profit, operating income, NOPAT, invested capital)
   - `quarterly_margins` from quarterly filings (gross margin only)
@@ -80,15 +89,62 @@ class IndustryAggregates:
 def fetch_live_fundamentals(
     symbol: str,
     *,
+    finnhub_client: FinancialsClient | None = None,
+    dart_client: Any = None,
+    industry_aggregates: IndustryAggregates | None = None,
+    effective_tax_rate: float | None = None,
+) -> TickerFundamentals:
+    """Dispatcher: route by symbol pattern to the right per-source adapter.
+
+    Korean tickers (.KS / .KQ / bare 6-digit / KRX:) → DART-backed adapter.
+    Everything else → Finnhub-backed adapter.
+
+    Args:
+        symbol: Any of the formats either adapter accepts.
+        finnhub_client: Used by the US adapter when applicable.
+        dart_client: Used by the KR adapter when applicable.
+        industry_aggregates: Forwarded as-is. Same shape works for both.
+        effective_tax_rate: When None, each adapter uses its own default
+            (US: 21%, KR: 22%). Override here only if you want a uniform
+            rate across mixed-market batches.
+    """
+    from wise_investor.screening.live_adapter_kr import (
+        DEFAULT_EFFECTIVE_TAX_RATE_KR,
+        fetch_live_fundamentals_kr,
+        is_korean_symbol,
+    )
+
+    if is_korean_symbol(symbol):
+        rate = effective_tax_rate if effective_tax_rate is not None else DEFAULT_EFFECTIVE_TAX_RATE_KR
+        return fetch_live_fundamentals_kr(
+            symbol,
+            client=dart_client,
+            industry_aggregates=industry_aggregates,
+            effective_tax_rate=rate,
+        )
+
+    rate = effective_tax_rate if effective_tax_rate is not None else DEFAULT_EFFECTIVE_TAX_RATE
+    return fetch_live_fundamentals_us(
+        symbol,
+        client=finnhub_client,
+        industry_aggregates=industry_aggregates,
+        effective_tax_rate=rate,
+    )
+
+
+def fetch_live_fundamentals_us(
+    symbol: str,
+    *,
     client: FinancialsClient | None = None,
     industry_aggregates: IndustryAggregates | None = None,
     effective_tax_rate: float = DEFAULT_EFFECTIVE_TAX_RATE,
 ) -> TickerFundamentals:
-    """Pull latest filings and shape them into `TickerFundamentals`.
+    """Pull latest filings from Finnhub and shape them into `TickerFundamentals`.
 
     Args:
-        symbol: Ticker (e.g. "NVDA"). Korean .KS tickers pass through but
-            Finnhub coverage is partial; DART integration is Step 5d.
+        symbol: Ticker (e.g. "NVDA"). For Korean tickers prefer the
+            top-level `fetch_live_fundamentals` dispatcher, which routes
+            to DART for richer coverage.
         client: Anything satisfying `FinancialsClient`. When None, a
             default `FinnhubClient` is constructed (lazy import, so this
             module stays importable without the Finnhub API key set).
@@ -167,17 +223,19 @@ def fetch_live_fundamentals(
 def fetch_live_universe(
     symbols: list[str],
     *,
-    client: FinancialsClient | None = None,
+    finnhub_client: FinancialsClient | None = None,
+    dart_client: Any = None,
     industry_aggregates_by_symbol: dict[str, IndustryAggregates] | None = None,
 ) -> list[TickerFundamentals]:
-    """Apply `fetch_live_fundamentals` to a list of symbols.
+    """Apply the dispatcher to a list of mixed-market symbols.
 
     Per-ticker exceptions are caught and logged — partial runs are
     survivable. Result list may be shorter than input on errors.
+    Clients are lazy-constructed: a US-only batch never imports the
+    DART module, and vice versa. A real client is only built for
+    markets that actually appear in `symbols`.
     """
-    if client is None:
-        from wise_investor.data.finnhub import FinnhubClient
-        client = FinnhubClient()
+    from wise_investor.screening.live_adapter_kr import is_korean_symbol
 
     out: list[TickerFundamentals] = []
     for s in symbols:
@@ -187,9 +245,20 @@ def fetch_live_universe(
                 if industry_aggregates_by_symbol is not None
                 else None
             )
-            funds = fetch_live_fundamentals(
-                s, client=client, industry_aggregates=aggs
-            )
+            if is_korean_symbol(s):
+                if dart_client is None:
+                    from wise_investor.data.dart import DartClient
+                    dart_client = DartClient()
+                funds = fetch_live_fundamentals(
+                    s, dart_client=dart_client, industry_aggregates=aggs,
+                )
+            else:
+                if finnhub_client is None:
+                    from wise_investor.data.finnhub import FinnhubClient
+                    finnhub_client = FinnhubClient()
+                funds = fetch_live_fundamentals(
+                    s, finnhub_client=finnhub_client, industry_aggregates=aggs,
+                )
             out.append(funds)
         except Exception as e:
             logger.warning("live fundamentals fetch failed for %s: %s", s, e)
@@ -280,5 +349,6 @@ __all__ = [
     "FinancialsClient",
     "IndustryAggregates",
     "fetch_live_fundamentals",
+    "fetch_live_fundamentals_us",
     "fetch_live_universe",
 ]

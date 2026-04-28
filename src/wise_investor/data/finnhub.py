@@ -20,11 +20,10 @@ import time
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 from wise_investor.config import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ class Quote(_Model):
     d: float | None = None  # change
     dp: float | None = None  # change percent
     h: float | None = None  # high
-    l: float | None = None  # low
+    l: float | None = None  # low  # noqa: E741 — mirrors Finnhub /quote API field name
     o: float | None = None  # open
     pc: float | None = None  # previous close
     t: int | None = None  # timestamp
@@ -163,6 +162,21 @@ class FinancialLineItem(_Model):
     label: str | None = None
     unit: str | None = None
     value: float | None = None
+
+    # Finnhub occasionally returns 'N/A' (or '-', '') in `value` for
+    # filings where a particular XBRL concept wasn't reported. The plain
+    # `float | None` annotation rejects these as a parse error and the
+    # whole FinancialsResponse fails validation — which used to take
+    # down our quarterly fetch entirely. Coerce common sentinels to None
+    # so a single bad concept doesn't poison the whole response.
+    @field_validator("value", mode="before")
+    @classmethod
+    def _coerce_missing_to_none(cls, v: object) -> object:
+        if isinstance(v, str):
+            stripped = v.strip().upper()
+            if stripped in {"", "-", "—", "N/A", "NA", "NULL", "NONE"}:
+                return None
+        return v
 
 
 class FinancialReport(_Model):
@@ -358,7 +372,7 @@ class FinnhubClient:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "FinnhubClient":
+    def __enter__(self) -> FinnhubClient:
         return self
 
     def __exit__(self, *_: object) -> None:

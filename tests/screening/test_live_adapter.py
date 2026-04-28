@@ -23,7 +23,7 @@ import pytest
 from wise_investor.screening.live_adapter import (
     DEFAULT_EFFECTIVE_TAX_RATE,
     IndustryAggregates,
-    fetch_live_fundamentals,
+    fetch_live_fundamentals_us,
     fetch_live_universe,
 )
 
@@ -120,7 +120,7 @@ def test_symbol_uppercased() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=1000, gross=600, operating=300, debt=50, equity=400, cash=100),
     ])
-    funds = fetch_live_fundamentals("nvda", client=client)
+    funds = fetch_live_fundamentals_us("nvda", client=client)
     assert funds.symbol == "NVDA"
 
 
@@ -131,7 +131,7 @@ def test_annual_sorted_oldest_first() -> None:
         _annual(2022, revenue=800, gross=480, operating=240, debt=50, equity=300, cash=80),
         _annual(2023, revenue=900, gross=540, operating=270, debt=50, equity=350, cash=90),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert [a.fiscal_year for a in funds.annual] == [2022, 2023, 2024]
 
 
@@ -144,7 +144,7 @@ def test_nopat_uses_default_tax_rate() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=1000, gross=600, operating=200, debt=0, equity=300, cash=50),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual[0].nopat == pytest.approx(
         200 * (1.0 - DEFAULT_EFFECTIVE_TAX_RATE)
     )
@@ -154,7 +154,7 @@ def test_nopat_uses_custom_tax_rate() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=1000, gross=600, operating=200, debt=0, equity=300, cash=50),
     ])
-    funds = fetch_live_fundamentals(
+    funds = fetch_live_fundamentals_us(
         "TEST", client=client, effective_tax_rate=0.30
     )
     assert funds.annual[0].nopat == pytest.approx(200 * 0.70)
@@ -164,7 +164,7 @@ def test_invested_capital_is_debt_plus_equity_minus_cash() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=1000, gross=600, operating=200, debt=100, equity=400, cash=50),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual[0].invested_capital == 100 + 400 - 50
 
 
@@ -175,7 +175,7 @@ def test_missing_equity_yields_none_invested_capital() -> None:
         bs=bs,
     ))
     client = _StubClient(annual=[entry])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual[0].invested_capital is None
 
 
@@ -191,7 +191,7 @@ def test_missing_debt_treated_as_zero() -> None:
         bs=bs,
     ))
     client = _StubClient(annual=[entry])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual[0].invested_capital == 500 - 100
 
 
@@ -199,7 +199,7 @@ def test_no_operating_income_yields_none_nopat() -> None:
     bs = [_Item("us-gaap_StockholdersEquity", 200), _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 50)]
     entry = _Entry(year=2024, report=_Report(ic=[], bs=bs))
     client = _StubClient(annual=[entry])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual[0].nopat is None
 
 
@@ -213,7 +213,7 @@ def test_industry_pulled_from_profile() -> None:
         annual=[_annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0)],
         profile_industry="Semiconductors",
     )
-    funds = fetch_live_fundamentals("NVDA", client=client)
+    funds = fetch_live_fundamentals_us("NVDA", client=client)
     assert funds.industry_classification == "Semiconductors"
 
 
@@ -225,7 +225,7 @@ def test_unknown_industry_when_profile_missing() -> None:
     client = _NoProfile(annual=[
         _annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.industry_classification == "Unknown"
 
 
@@ -234,7 +234,7 @@ def test_unknown_industry_when_profile_field_is_none() -> None:
         annual=[_annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0)],
         profile_industry=None,
     )
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.industry_classification == "Unknown"
 
 
@@ -247,7 +247,7 @@ def test_segments_history_falls_back_to_single_segment() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert len(funds.segments_history) == 1
     seg = funds.segments_history[0]
     assert seg.primary_segment_exists is True
@@ -263,7 +263,7 @@ def test_top5_and_diversification_default_to_none_zero() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.top5_customer_share is None
     assert funds.diversification_attempt_signals == 0
 
@@ -281,7 +281,7 @@ def test_industry_aggregates_passed_through_when_supplied() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0),
     ])
-    funds = fetch_live_fundamentals(
+    funds = fetch_live_fundamentals_us(
         "TEST", client=client, industry_aggregates=aggs
     )
     assert funds.industry_roic_3y_median == 0.15
@@ -292,7 +292,7 @@ def test_industry_aggregates_default_to_none() -> None:
     client = _StubClient(annual=[
         _annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.industry_roic_3y_median is None
     assert funds.industry_gross_margin_3y_std is None
 
@@ -313,7 +313,7 @@ def test_quarterly_margins_computed() -> None:
             _quarter(2024, 3, revenue=240, gross=120),
         ],
     )
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert len(funds.quarterly_margins) == 3
     assert all(abs(qm.gross_margin - 0.5) < 1e-9 for qm in funds.quarterly_margins)
     assert funds.quarterly_margins[0].quarter_id == "2024Q1"
@@ -329,7 +329,7 @@ def test_quarterly_with_zero_revenue_skipped() -> None:
             _quarter(2024, 2, revenue=250, gross=125),
         ],
     )
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert len(funds.quarterly_margins) == 1
     assert funds.quarterly_margins[0].quarter_id == "2024Q2"
 
@@ -345,7 +345,7 @@ def test_quarterly_with_missing_gross_profit_skipped() -> None:
         ],
         quarterly=[entry],
     )
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.quarterly_margins == ()
 
 
@@ -360,7 +360,7 @@ def test_quarterly_fetch_failure_yields_empty_quarterly() -> None:
     client = _AnnualOnly(annual=[
         _annual(2024, revenue=1000, gross=500, operating=200, debt=0, equity=300, cash=50),
     ])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert len(funds.annual) == 1
     assert funds.quarterly_margins == ()
 
@@ -377,7 +377,7 @@ def test_quarterly_capped_at_12() -> None:
         ],
         quarterly=quarterly,
     )
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert len(funds.quarterly_margins) == 12
 
 
@@ -388,7 +388,7 @@ def test_quarterly_capped_at_12() -> None:
 
 def test_empty_annual_response_yields_empty_annual() -> None:
     client = _StubClient(annual=[])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual == ()
     # Single-segment default still applies even with no annual; year=0 fallback.
     assert funds.segments_history[0].fiscal_year == 0
@@ -400,7 +400,7 @@ def test_entry_with_no_year_skipped() -> None:
     ))
     good = _annual(2024, revenue=100, gross=60, operating=30, debt=0, equity=50, cash=0)
     client = _StubClient(annual=[bad, good])
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     assert len(funds.annual) == 1
     assert funds.annual[0].fiscal_year == 2024
 
@@ -425,7 +425,7 @@ def test_universe_swallows_per_ticker_exceptions() -> None:
             return super().financials(symbol, freq)
 
     client = _Flaky()
-    out = fetch_live_universe(["GOOD", "BAD", "ALSOGOOD"], client=client)
+    out = fetch_live_universe(["GOOD", "BAD", "ALSOGOOD"], finnhub_client=client)
     assert {f.symbol for f in out} == {"GOOD", "ALSOGOOD"}
 
 
@@ -441,7 +441,7 @@ def test_universe_uses_industry_aggregates_by_symbol() -> None:
     ])
     out = fetch_live_universe(
         ["GOOD", "OTHER"],
-        client=client,
+        finnhub_client=client,
         industry_aggregates_by_symbol=aggs_map,
     )
     by_sym = {f.symbol: f for f in out}
@@ -474,7 +474,7 @@ def test_live_output_is_compatible_with_prefilter() -> None:
             _quarter(2024, 4, revenue=300, gross=180),
         ],
     )
-    funds = fetch_live_fundamentals("TEST", client=client)
+    funds = fetch_live_fundamentals_us("TEST", client=client)
     primary = funds.segments_history[-1]
     result = evaluate_ticker(funds, primary)
     # No assertions on verdict here — the data is synthetic. The fact

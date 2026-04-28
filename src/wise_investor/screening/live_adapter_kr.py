@@ -1,0 +1,342 @@
+"""DART-based live fundamentals adapter for Korean tickers.
+
+OpenDART is the authoritative source for KRX-listed entities and
+covers what Finnhub's free tier doesn't reach for Korean symbols (.KS
+/ .KQ). This adapter shapes DART's per-year `fnlttSinglAcntAll.json`
+responses into the same `TickerFundamentals` contract the Stage 2
+prefilter consumes — so callers don't need to know which data source
+produced the numbers.
+
+Symbol normalization handled here so the dispatcher can pass anything
+the manifest carries:
+  - "005930.KS"  → "005930" (Yahoo-style suffix)
+  - "005930.KQ"  → "005930"
+  - "KRX:005930" → "005930"
+  - "005930"     → "005930"
+  - "5930"       → "005930" (zero-pad)
+
+Account extraction strategy (per row in the DART response):
+  1. Try IFRS XBRL `account_id` (e.g. "ifrs-full_Revenue").
+  2. Fall back to Korean `account_nm` (e.g. "수익(매출액)", "매출액").
+  3. `sj_div` narrows the search to the right statement (BS / IS / CF).
+
+KRW values are returned as-is. Currency normalization is the consumer's
+responsibility — the prefilter compares ratios (ROIC, gross margin),
+not absolute amounts, so KRW vs USD doesn't affect the verdict.
+
+Limitations (called out per Commitment 3):
+  - Quarterly margins are deferred. DART's per-quarter `reprt_code`
+    11013/11014 returns cumulative-to-date amounts, not per-quarter
+    deltas; building a clean quarterly_margins tuple requires
+    additional subtraction logic. Until that lands, KR tickers run
+    Stage 2 with empty quarterly margins (the gross_margin_3y_std proxy
+    becomes None → moat axis routes through NEED_LLM, not PASS).
+  - Industry classification is a static "Korean Equity (DART)" string;
+    DART doesn't expose GICS sub-industries.
+  - Segments default to single-segment; DART has segment disclosures
+    but they're filed as separate `사업의 내용` documents, not via the
+    fnlttSinglAcntAll endpoint.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import logging
+from typing import Any, Protocol
+
+from wise_investor.screening.segments import single_segment_default
+from wise_investor.screening.types import (
+    AnnualFinancials,
+    TickerFundamentals,
+)
+
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_EFFECTIVE_TAX_RATE_KR: float = 0.22  # 한국 법인세 기본세율 ~22% (2024 기준)
+DEFAULT_HISTORY_YEARS: int = 5
+
+
+# ---------------------------------------------------------------------------
+# Client interface
+# ---------------------------------------------------------------------------
+
+
+class DartLikeClient(Protocol):
+    """Minimal duck-typed interface this adapter expects from a DART client."""
+
+    def corp_code_from_stock_code(self, stock_code: str) -> str | None: ...
+
+    def financials(
+        self,
+        corp_code: str,
+        year: int | str,
+        reprt_code: str = ...,
+        fs_div: str = ...,
+    ) -> Any: ...
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
+
+
+def fetch_live_fundamentals_kr(
+    symbol: str,
+    *,
+    client: DartLikeClient | None = None,
+    history_years: int = DEFAULT_HISTORY_YEARS,
+    industry_aggregates: Any = None,
+    effective_tax_rate: float = DEFAULT_EFFECTIVE_TAX_RATE_KR,
+    today: dt.date | None = None,
+) -> TickerFundamentals:
+    """Pull last `history_years` annual filings from DART → TickerFundamentals.
+
+    Args:
+        symbol: Korean ticker in any common form (see module docstring).
+        client: Anything satisfying DartLikeClient. None constructs a
+            real DartClient (lazy import).
+        history_years: How many fiscal years back to attempt. The
+            adapter is forgiving — years with no data are silently
+            dropped, so this is an upper bound, not a requirement.
+        industry_aggregates: Same `IndustryAggregates` shape the US
+            adapter accepts; pass None to leave the comparison fields
+            unfilled.
+        effective_tax_rate: Used to derive NOPAT from operating income.
+            Korean default is 22% (post-2018 corporate rate baseline).
+        today: Override for the "current" date used to determine the
+            most-recent fiscal year to query. Tests inject a fixed date
+            so they don't drift across runs.
+    """
+    if client is None:
+        from wise_investor.data.dart import DartClient  # lazy: needs API key
+        client = DartClient()
+
+    stock_code = _normalize_kr_symbol(symbol)
+    corp_code = client.corp_code_from_stock_code(stock_code)
+    if corp_code is None:
+        raise ValueError(
+            f"DART corp_code not found for {symbol} "
+            f"(normalized: {stock_code}). Possible causes: not KRX-listed, "
+            f"recently delisted, or corpCode cache stale."
+        )
+
+    today = today or dt.date.today()
+    # Korean filings disclose annual results around March of year+1, so
+    # the latest reliably-available fiscal year is current_year - 1 if
+    # we're past Q1, else current_year - 2. Be conservative: always
+    # start at current_year - 1.
+    most_recent_fy = today.year - 1
+    earliest_fy = most_recent_fy - history_years + 1
+
+    annual: list[AnnualFinancials] = []
+    for fy in range(earliest_fy, most_recent_fy + 1):
+        try:
+            resp = client.financials(corp_code, year=fy)
+        except Exception as e:
+            logger.warning("DART financials %s/%s failed: %s", symbol, fy, e)
+            continue
+        if not getattr(resp, "ok", True):
+            # status != "000" on the DART response
+            continue
+        ann = _build_annual_from_dart(resp, fy, effective_tax_rate)
+        if ann is not None:
+            annual.append(ann)
+
+    annual.sort(key=lambda a: a.fiscal_year)
+    annual_t = tuple(annual)
+
+    latest_fy = annual_t[-1].fiscal_year if annual_t else 0
+    segments_history = (single_segment_default(symbol.upper(), fiscal_year=latest_fy),)
+
+    if industry_aggregates is not None:
+        roic_median = industry_aggregates.industry_roic_3y_median
+        gm_std = industry_aggregates.industry_gross_margin_3y_std
+    else:
+        roic_median = None
+        gm_std = None
+
+    return TickerFundamentals(
+        symbol=symbol.upper(),
+        industry_classification="Korean Equity (DART)",
+        annual=annual_t,
+        quarterly_margins=(),  # deferred — see module docstring
+        segments_history=segments_history,
+        top5_customer_share=None,
+        diversification_attempt_signals=0,
+        industry_roic_3y_median=roic_median,
+        industry_gross_margin_3y_std=gm_std,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Symbol normalization
+# ---------------------------------------------------------------------------
+
+
+def _normalize_kr_symbol(symbol: str) -> str:
+    """Normalize a Korean ticker to the 6-digit DART stock code.
+
+    Accepts: "005930", "005930.KS", "005930.KQ", "KRX:005930",
+    bare integers ("5930"). Returns 6-digit zero-padded.
+    """
+    s = str(symbol).strip().upper()
+    for suffix in (".KS", ".KQ", ".KRX"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+            break
+    for prefix in ("KRX:", "KS:", "KQ:"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+            break
+    return s.zfill(6)
+
+
+# ---------------------------------------------------------------------------
+# Per-filing projection
+# ---------------------------------------------------------------------------
+
+
+# Account lookup table — XBRL `account_id` candidates first, Korean
+# display-name fallbacks second. Order within each list matters: most
+# common first. The adapter walks the table per logical field.
+_ACCOUNT_CANDIDATES: dict[str, dict[str, list[str]]] = {
+    "revenue": {
+        "ids": ["ifrs-full_Revenue", "dart_Revenue"],
+        "names": ["수익(매출액)", "매출액", "수익"],
+        "sj_div": "IS",
+    },
+    "gross_profit": {
+        "ids": ["ifrs-full_GrossProfit"],
+        "names": ["매출총이익"],
+        "sj_div": "IS",
+    },
+    "operating_income": {
+        "ids": [
+            "dart_OperatingIncomeLoss",
+            "ifrs-full_ProfitLossFromOperatingActivities",
+        ],
+        "names": ["영업이익", "영업이익(손실)"],
+        "sj_div": "IS",
+    },
+    "total_equity": {
+        "ids": ["ifrs-full_Equity"],
+        "names": ["자본총계"],
+        "sj_div": "BS",
+    },
+    "cash_and_equivalents": {
+        "ids": ["ifrs-full_CashAndCashEquivalents"],
+        "names": ["현금및현금성자산"],
+        "sj_div": "BS",
+    },
+    "short_term_borrowings": {
+        "ids": ["ifrs-full_ShorttermBorrowings", "dart_ShorttermBorrowings"],
+        "names": ["단기차입금"],
+        "sj_div": "BS",
+    },
+    "long_term_borrowings": {
+        "ids": ["ifrs-full_LongtermBorrowings", "dart_LongtermBorrowings"],
+        "names": ["장기차입금"],
+        "sj_div": "BS",
+    },
+}
+
+
+def _build_annual_from_dart(
+    resp: Any, fiscal_year: int, tax_rate: float
+) -> AnnualFinancials | None:
+    """Project one DART annual response into AnnualFinancials."""
+    revenue = _extract(resp, "revenue")
+    gross_profit = _extract(resp, "gross_profit")
+    operating_income = _extract(resp, "operating_income")
+
+    if (
+        revenue is None
+        and gross_profit is None
+        and operating_income is None
+    ):
+        # Empty response — DART had no rows or no recognizable accounts.
+        return None
+
+    nopat: float | None = (
+        operating_income * (1.0 - tax_rate)
+        if operating_income is not None
+        else None
+    )
+
+    equity = _extract(resp, "total_equity")
+    cash = _extract(resp, "cash_and_equivalents")
+    short_debt = _extract(resp, "short_term_borrowings")
+    long_debt = _extract(resp, "long_term_borrowings")
+
+    if short_debt is None and long_debt is None:
+        total_debt: float | None = None
+    else:
+        total_debt = (short_debt or 0.0) + (long_debt or 0.0)
+
+    if equity is not None:
+        invested_capital: float | None = (
+            (total_debt or 0.0) + equity - (cash or 0.0)
+        )
+    else:
+        invested_capital = None
+
+    return AnnualFinancials(
+        fiscal_year=fiscal_year,
+        revenue=revenue,
+        gross_profit=gross_profit,
+        operating_income=operating_income,
+        nopat=nopat,
+        invested_capital=invested_capital,
+        rd_expense=None,
+    )
+
+
+def _extract(resp: Any, logical_field: str) -> float | None:
+    """Walk the candidate IDs and Korean names for one logical field."""
+    from wise_investor.data.dart import extract_account_value
+
+    spec = _ACCOUNT_CANDIDATES[logical_field]
+    sj_div = spec["sj_div"]
+    for aid in spec["ids"]:
+        v = extract_account_value(resp, account_id=aid, sj_div=sj_div)
+        if v is not None:
+            return v
+    for nm in spec["names"]:
+        v = extract_account_value(resp, account_nm=nm, sj_div=sj_div)
+        if v is not None:
+            return v
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Symbol detection — used by the dispatcher in live_adapter.py
+# ---------------------------------------------------------------------------
+
+
+def is_korean_symbol(symbol: str) -> bool:
+    """Heuristic: does this look like a Korean equity ticker?
+
+    Patterns:
+      - Suffix .KS, .KQ, .KRX
+      - Prefix KRX:, KS:, KQ:
+      - Bare 6-digit numeric (KRX listing convention)
+      - Bare 1-5 digit numeric (zero-pads to 6)
+    """
+    s = str(symbol).strip().upper()
+    if any(s.endswith(suf) for suf in (".KS", ".KQ", ".KRX")):
+        return True
+    if any(s.startswith(pfx) for pfx in ("KRX:", "KS:", "KQ:")):
+        return True
+    # Pure digits: only treat as KR when 1-6 digits long. Longer pure
+    # numeric strings probably aren't tickers at all.
+    return bool(s.isdigit() and 1 <= len(s) <= 6)
+
+
+__all__ = [
+    "DEFAULT_EFFECTIVE_TAX_RATE_KR",
+    "DEFAULT_HISTORY_YEARS",
+    "DartLikeClient",
+    "fetch_live_fundamentals_kr",
+    "is_korean_symbol",
+]
