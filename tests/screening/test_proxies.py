@@ -161,7 +161,10 @@ def test_moat_advantage_trend_negative_when_eroding() -> None:
 
 
 def test_moat_handles_missing_invested_capital() -> None:
-    """A row with None capital is skipped, not crashed on."""
+    """A row with None capital is skipped, not crashed on. Per
+    constitution §10 Auto-PASS 1, fewer than 3 valid years yields
+    roic_3y_avg=None so the prefilter can fire the explicit FAIL.
+    """
     funds = _make_funds(
         annual=(
             _annual(2022, nopat=10, capital=None),  # skip
@@ -171,18 +174,42 @@ def test_moat_handles_missing_invested_capital() -> None:
         industry_roic=0.10,
     )
     out = compute_moat_proxies(funds)
-    # Only 2 valid rows — avg is mean of those two: 0.13
+    # Only 2 valid rows → constitution §10 says insufficient history.
+    assert out.roic_3y_avg is None
+
+
+def test_moat_three_valid_years_yields_avg() -> None:
+    """When 3 valid ROIC rows exist, the average is computed
+    normally — covers the threshold above the §10 Auto-PASS 1.
+    """
+    funds = _make_funds(
+        annual=(
+            _annual(2022, nopat=10, capital=100),  # ROIC 0.10
+            _annual(2023, nopat=12, capital=100),  # ROIC 0.12
+            _annual(2024, nopat=14, capital=100),  # ROIC 0.14
+        ),
+        industry_roic=0.10,
+    )
+    out = compute_moat_proxies(funds)
     assert out.roic_3y_avg is not None
-    assert abs(out.roic_3y_avg - 0.13) < 1e-9
+    assert abs(out.roic_3y_avg - 0.12) < 1e-9
 
 
 def test_moat_no_industry_median_yields_none_advantage() -> None:
+    """With 3+ years of ROIC history but no industry median, we
+    can compute the absolute ROIC but not the advantage.
+    """
     funds = _make_funds(
-        annual=(_annual(2024, nopat=20, capital=100),),
+        annual=(
+            _annual(2022, nopat=18, capital=100),
+            _annual(2023, nopat=20, capital=100),
+            _annual(2024, nopat=22, capital=100),
+        ),
         industry_roic=None,
     )
     out = compute_moat_proxies(funds)
-    assert out.roic_3y_avg == 0.20
+    assert out.roic_3y_avg is not None
+    assert abs(out.roic_3y_avg - 0.20) < 1e-9
     assert out.roic_advantage is None
     assert out.roic_advantage_trend is None
 

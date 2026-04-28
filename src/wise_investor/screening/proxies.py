@@ -80,13 +80,19 @@ def _ols_slope(points: list[tuple[float, float]]) -> float | None:
 
 
 def compute_moat_proxies(funds: TickerFundamentals) -> MoatProxies:
-    """Constitution §15 moat block."""
+    """Constitution §15 moat block.
+
+    Requires ≥3 years of ROIC history (constitution §10 Auto-PASS 1).
+    With fewer than 3 years we return roic_3y_avg=None so the
+    prefilter's _evaluate_moat fires the explicit "<3 years" FAIL.
+    """
     yearly_roic = _yearly_roic(funds.annual)
-    # Use the most recent 3 years where both numerator and denominator exist.
-    recent_3 = yearly_roic[-3:] if len(yearly_roic) >= 3 else yearly_roic
-    roic_3y_avg = (
-        sum(r for _, r in recent_3) / len(recent_3) if recent_3 else None
-    )
+    # Constitution §10 Auto-PASS 1 — return None when data spans <3 years.
+    if len(yearly_roic) < 3:
+        roic_3y_avg = None
+    else:
+        recent_3 = yearly_roic[-3:]
+        roic_3y_avg = sum(r for _, r in recent_3) / len(recent_3)
 
     if roic_3y_avg is not None and funds.industry_roic_3y_median is not None:
         roic_advantage = roic_3y_avg - funds.industry_roic_3y_median
