@@ -40,7 +40,96 @@ Supported markets:
 
 ---
 
-## Current state (Phases 1–4)
+## Constitution v2.0 — universe-driven discovery (current)
+
+The system was rebuilt around **constitution v2.0**
+([`docs/constitution.md`](docs/constitution.md)) — a
+universe-driven 6-stage pipeline that fights user bias instead of
+amplifying it. Six commitments are enforced in code:
+
+1. **User preferences must not influence universe membership.** Tip
+   ingestion is decoupled from analysis triggering.
+2. **System has PASS authority.** No human override of axis verdicts.
+3. **Precision over recall.** Missing data routes to NEED_LLM, never
+   silent PASS.
+4. **No Dreamer module.** Optimism is not a separate agent.
+5. **Fixed hierarchy.** Three axes (moat / new_frontier / bottleneck)
+   evaluated per ticker; the gate requires 2+ axes including a growth
+   axis.
+6. **Binary output.** BUY or PASS; no HOLD-as-fence-sitting.
+
+Six-stage pipeline:
+
+```
+Stage 1: Universe → Stage 2: quant prefilter → Stage 3: light LLM screen
+                                                          │
+                            (axis-aligned debate) ←──────┤
+                                  │                       ▼
+        Stage 4: Skeptic → Defender → Steward + audit ──→ Stage 5: value chain
+                                                                  positioning
+                                                                  │
+                                                                  ▼
+                                                         Stage 6: HRP portfolio
+                                                                  + 1%-30% bounds
+                                                                  + cluster trim
+```
+
+Calibration is back-validation against historical outcomes
+(`run_back_validation.py` → ledger entry → `run_ledger_analysis.py`
+for confusion-matrix metrics). User intuition does NOT enter the
+calibration loop.
+
+| Layer | Status | What's in it |
+|-------|--------|--------------|
+| Stage 2 quant prefilter | ✅ | Per-axis `evaluate_ticker` with NEED_LLM routing for missing data |
+| Stage 3 light LLM screen | ✅ | Constitution §18 prompt, deterministic hierarchy gate |
+| Stage 4 v2 prompts | ✅ | Axis-aligned attack distribution, strict-concede Defender, 4-rule Steward audit |
+| Stage 5 value chain positioning | ✅ | NetworkX clustering + over/under-representation flags |
+| Stage 6 HRP portfolio | ✅ | López de Prado HRP + 1%/30% bounds + cluster collision adjustment |
+| Live screening (US Finnhub + KR DART) | ✅ | Symbol dispatcher, 7/7 KR tickers verified |
+| Back-validation (Finnhub historical) | ✅ | Exact filed_date filter, 5-year horizon, 17/30 manifest tickers |
+| Calibration ledger + analysis | ✅ | TP/FP/TN/FN classifier metrics across constitution versions |
+| Tip annotation surface | ✅ | Read-only "user mentioned N days ago" metadata; never enters LLM context |
+
+The legacy v1 6-agent crew runner (`scripts/run_crew.py`) remains
+available for single-ticker deep-dives; the v2 path
+(`scripts/run_crew_v2.py`) gates on Stage 2 + Stage 3 first and uses
+constitution-§19/§20/§21 prompts.
+
+### v2.0 CLI reference
+
+```bash
+# Live screening (Stage 2 + optional Stage 3)
+python scripts/run_screening.py NVDA --with-stage3
+python scripts/run_screening.py --universe data/calibration/manifest.yaml \
+    --with-peers --with-rag-signals --with-tip-annotations
+
+# Stage 4 v2 crew (gated by Stage 2/3)
+python scripts/run_crew_v2.py NVDA
+
+# Back-validation (uses Finnhub historical by default)
+python scripts/run_back_validation.py
+python scripts/run_back_validation.py --limit 3 --no-write   # dry-run
+
+# Calibration ledger analysis
+python scripts/run_ledger_analysis.py                  # latest entry
+python scripts/run_ledger_analysis.py --list
+python scripts/run_ledger_analysis.py --compare a.json b.json
+
+# Stage 5 value chain positioning
+python scripts/run_stage5_positioning.py NVDA AMD INTC
+
+# Stage 6 portfolio construction (HRP + bounds + cluster trim)
+python scripts/run_portfolio_construction.py NVDA AMD INTC \
+    --graph data/value_chain.graph.json --positions positions.yaml
+
+# Tip log gap analysis
+python scripts/run_tip_gap_analysis.py NVDA AAPL MSFT --window-days 90
+```
+
+---
+
+## Legacy state (Phases 1–4 — pre-constitution-v2.0)
 
 | Phase | Status | What's in it |
 |-------|--------|--------------|
@@ -75,9 +164,11 @@ discussion and how to opt back into deterministic mode per-agent.
 curl -fsSL https://ollama.com/install.sh | sh
 ollama serve &
 
-# 16k context variants used by the crew
-ollama pull qwen2.5:7b-16k
-ollama pull llama3.1:8b-16k
+# 16k context variants used by the crew. The :7b-16k / :8b-16k tags
+# are custom Modelfile aliases that raise num_ctx from the 4096
+# default — Stage 3 + Defender prompts exceed 4K. Build with:
+bash scripts/create_qwen_16k.sh    # qwen2.5:7b-16k (Stage 3, Analyst, Valuer, Steward)
+bash scripts/create_llama_16k.sh   # llama3.1:8b-16k (Skeptic)
 ```
 
 Want a different backend? See
@@ -110,7 +201,7 @@ uv pip install -e ".[dev]"
 
 ```bash
 python scripts/verify_env.py      # API keys + Ollama reachable
-pytest                            # should report 750+ passed
+pytest                            # should report 1150+ passed (constitution v2.0)
 ```
 
 ---
