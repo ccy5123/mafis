@@ -200,16 +200,23 @@ def _normalize_kr_symbol(symbol: str) -> str:
 # Account lookup table — XBRL `account_id` candidates first, Korean
 # display-name fallbacks second. Order within each list matters: most
 # common first. The adapter walks the table per logical field.
-_ACCOUNT_CANDIDATES: dict[str, dict[str, list[str]]] = {
+#
+# `sj_divs` is a tuple because Korean filers split between two valid
+# DART labels for the income statement: standalone-IFRS filers use
+# "IS"; consolidated filers (Samsung, NAVER, Hyundai) use "IS"; many
+# others (SK Hynix, Kakao, Samsung Bio) use "CIS" (Comprehensive
+# Income Statement). Both are schema-valid; the adapter tries each
+# in order so we don't bias toward one filing convention.
+_ACCOUNT_CANDIDATES: dict[str, dict[str, list[str] | tuple[str, ...]]] = {
     "revenue": {
         "ids": ["ifrs-full_Revenue", "dart_Revenue"],
-        "names": ["수익(매출액)", "매출액", "수익"],
-        "sj_div": "IS",
+        "names": ["수익(매출액)", "매출액", "수익", "영업수익"],
+        "sj_divs": ("IS", "CIS"),
     },
     "gross_profit": {
         "ids": ["ifrs-full_GrossProfit"],
-        "names": ["매출총이익"],
-        "sj_div": "IS",
+        "names": ["매출총이익", "매출총이익(손실)"],
+        "sj_divs": ("IS", "CIS"),
     },
     "operating_income": {
         "ids": [
@@ -217,27 +224,27 @@ _ACCOUNT_CANDIDATES: dict[str, dict[str, list[str]]] = {
             "ifrs-full_ProfitLossFromOperatingActivities",
         ],
         "names": ["영업이익", "영업이익(손실)"],
-        "sj_div": "IS",
+        "sj_divs": ("IS", "CIS"),
     },
     "total_equity": {
         "ids": ["ifrs-full_Equity"],
         "names": ["자본총계"],
-        "sj_div": "BS",
+        "sj_divs": ("BS",),
     },
     "cash_and_equivalents": {
         "ids": ["ifrs-full_CashAndCashEquivalents"],
         "names": ["현금및현금성자산"],
-        "sj_div": "BS",
+        "sj_divs": ("BS",),
     },
     "short_term_borrowings": {
         "ids": ["ifrs-full_ShorttermBorrowings", "dart_ShorttermBorrowings"],
         "names": ["단기차입금"],
-        "sj_div": "BS",
+        "sj_divs": ("BS",),
     },
     "long_term_borrowings": {
         "ids": ["ifrs-full_LongtermBorrowings", "dart_LongtermBorrowings"],
         "names": ["장기차입금"],
-        "sj_div": "BS",
+        "sj_divs": ("BS",),
     },
 }
 
@@ -293,19 +300,25 @@ def _build_annual_from_dart(
 
 
 def _extract(resp: Any, logical_field: str) -> float | None:
-    """Walk the candidate IDs and Korean names for one logical field."""
+    """Walk the candidate IDs / Korean names / sj_divs for one field.
+
+    Iteration order: outer loop = sj_div (income filers split between
+    "IS" and "CIS"); inner loop = id-first then name-fallback. First
+    non-None hit wins.
+    """
     from wise_investor.data.dart import extract_account_value
 
     spec = _ACCOUNT_CANDIDATES[logical_field]
-    sj_div = spec["sj_div"]
-    for aid in spec["ids"]:
-        v = extract_account_value(resp, account_id=aid, sj_div=sj_div)
-        if v is not None:
-            return v
-    for nm in spec["names"]:
-        v = extract_account_value(resp, account_nm=nm, sj_div=sj_div)
-        if v is not None:
-            return v
+    sj_divs: tuple[str, ...] = tuple(spec["sj_divs"])
+    for sj_div in sj_divs:
+        for aid in spec["ids"]:
+            v = extract_account_value(resp, account_id=aid, sj_div=sj_div)
+            if v is not None:
+                return v
+        for nm in spec["names"]:
+            v = extract_account_value(resp, account_nm=nm, sj_div=sj_div)
+            if v is not None:
+                return v
     return None
 
 
