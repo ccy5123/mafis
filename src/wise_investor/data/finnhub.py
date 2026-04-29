@@ -279,10 +279,20 @@ CONCEPT_CANDIDATES: dict[str, list[str]] = {
         "us-gaap_Cash",
     ],
     "long_term_debt": [
+        # Calibration finding (#3-deep, 2026-04): retailers and other
+        # capital-lease-heavy filers (HD, COST, T) report long-term
+        # debt under `LongTermDebtAndCapitalLeaseObligations` rather
+        # than the bare `LongTermDebtNoncurrent`. The earlier candidate
+        # list missed $24.27B of HD FY2017 debt for this reason —
+        # collapsed IC to negative and threw ROIC to -1993%.
+        # Order: prefer the all-inclusive AndCapitalLease tag first
+        # (covers more filers); fall through to plain forms.
+        "us-gaap_LongTermDebtAndCapitalLeaseObligations",
         "us-gaap_LongTermDebtNoncurrent",
         "us-gaap_LongTermDebt",
     ],
     "short_term_debt": [
+        "us-gaap_LongTermDebtAndCapitalLeaseObligationsCurrent",
         "us-gaap_LongTermDebtCurrent",
         "us-gaap_CommercialPaper",
         "us-gaap_ShortTermBorrowings",
