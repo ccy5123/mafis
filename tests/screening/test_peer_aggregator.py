@@ -522,3 +522,210 @@ def test_cache_separates_by_as_of_date(tmp_path: Path) -> None:
     # Two separate cache files should exist
     cache_files = list(tmp_path.glob("*.json"))
     assert len(cache_files) == 2
+
+
+# ---------------------------------------------------------------------------
+# P1d (2026-04): explicit industry filter
+# ---------------------------------------------------------------------------
+
+
+class _Profile:
+    """Minimal Finnhub Profile shape for explicit industry filter tests."""
+
+    def __init__(self, industry: str | None) -> None:
+        self.finnhub_industry = industry
+
+
+class _ProfiledClient(_StubClient):
+    """`_StubClient` extended with a `profile()` method.
+
+    `industry_by_symbol` maps a symbol to its `finnhub_industry`. A
+    missing entry → profile() raises (simulates Finnhub 404), which
+    `_safe_industry` catches and treats as None.
+    """
+
+    def __init__(
+        self,
+        *,
+        peer_list=None,
+        financials_by_symbol=None,
+        default_financials=None,
+        industry_by_symbol: dict[str, str | None] | None = None,
+        focal_industry: str | None = None,
+    ) -> None:
+        super().__init__(
+            peer_list=peer_list,
+            financials_by_symbol=financials_by_symbol,
+            default_financials=default_financials,
+        )
+        self._industries = dict(industry_by_symbol or {})
+        # The focal symbol's industry is provided separately (it isn't
+        # in peer_list but profile() is still called for it).
+        if focal_industry is not None:
+            self._focal_industry = focal_industry
+        else:
+            self._focal_industry = None
+        self.profile_calls: list[str] = []
+
+    def profile(self, symbol: str):
+        self.profile_calls.append(symbol)
+        u = symbol.upper()
+        if u in self._industries:
+            return _Profile(self._industries[u])
+        if self._focal_industry is not None and u == "NVDA":
+            return _Profile(self._focal_industry)
+        # Simulate Finnhub returning a profile but with no industry
+        # field populated (common for foreign-listing peers like .TW).
+        return _Profile(None)
+
+
+def test_industry_filter_keeps_matched_peers(tmp_path: Path) -> None:
+    """When focal and peers share the industry, all peers contribute."""
+    client = _ProfiledClient(
+        peer_list=["AMD", "INTC"],
+        default_financials=_profitable_peer([2022, 2023, 2024]),
+        industry_by_symbol={"AMD": "Semiconductors", "INTC": "Semiconductors"},
+        focal_industry="Semiconductors",
+    )
+    result = compute_industry_aggregates(
+        "NVDA", client=client, cache=False, cache_dir=tmp_path,
+    )
+    assert result.focal_industry == "Semiconductors"
+    assert result.n_peers_industry_mismatch == 0
+    assert result.n_peers_with_data == 2
+    assert result.industry_aggregates.industry_roic_3y_median is not None
+
+
+def test_industry_filter_excludes_mismatched_peer(tmp_path: Path) -> None:
+    """A peer with a different industry is rejected from ROIC median."""
+    client = _ProfiledClient(
+        peer_list=["AMD", "COIN.TO"],
+        financials_by_symbol={
+            "AMD": _profitable_peer([2022, 2023, 2024]),
+            # COIN.TO has financials, but its industry differs — must
+            # NOT contribute even though data is available.
+            "COIN.TO": _high_roic_peer([2022, 2023, 2024]),
+        },
+        industry_by_symbol={
+            "AMD": "Semiconductors",
+            "COIN.TO": "Financial Services",
+        },
+        focal_industry="Semiconductors",
+    )
+    result = compute_industry_aggregates(
+        "NVDA", client=client, cache=False, cache_dir=tmp_path,
+    )
+    assert result.n_peers_industry_mismatch == 1
+    # Only AMD contributes; the median is just AMD's avg_roic_3y.
+    assert result.n_peers_with_data == 1
+    matched = [d for d in result.peers_used if not d.industry_mismatch]
+    rejected = [d for d in result.peers_used if d.industry_mismatch]
+    assert {d.symbol for d in matched} == {"AMD"}
+    assert {d.symbol for d in rejected} == {"COIN.TO"}
+    # Mismatched peer should not have triggered a financials() fetch.
+    fetched = [c[0] for c in client.financials_calls]
+    assert "COIN.TO" not in fetched
+    assert "AMD" in fetched
+
+
+def test_industry_filter_treats_unknown_peer_industry_as_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Foreign-listing peers (like .TW) often return industry=None.
+
+    With an explicit focal industry known, an unknown peer industry
+    is treated as mismatch (defensive — could be a cross-listing).
+    """
+    client = _ProfiledClient(
+        peer_list=["2330.TW"],
+        default_financials=_profitable_peer([2022, 2023, 2024]),
+        industry_by_symbol={"2330.TW": None},  # explicitly returns None
+        focal_industry="Semiconductors",
+    )
+    result = compute_industry_aggregates(
+        "NVDA", client=client, cache=False, cache_dir=tmp_path,
+    )
+    assert result.n_peers_industry_mismatch == 1
+    assert result.industry_aggregates.industry_roic_3y_median is None
+
+
+def test_industry_filter_disabled_when_focal_industry_unknown(
+    tmp_path: Path,
+) -> None:
+    """If even the focal's industry is None, the filter disables.
+
+    Backward compat: clients without a working profile() method, or
+    cases where Finnhub doesn't index the focal's industry, must fall
+    back to natural filtering (empty financials → excluded). All peers
+    pass the explicit gate; only data availability gates them.
+    """
+    client = _ProfiledClient(
+        peer_list=["AMD", "INTC"],
+        default_financials=_profitable_peer([2022, 2023, 2024]),
+        industry_by_symbol={"AMD": "Semiconductors", "INTC": "Software"},
+        focal_industry=None,
+    )
+    result = compute_industry_aggregates(
+        "NVDA", client=client, cache=False, cache_dir=tmp_path,
+    )
+    assert result.focal_industry is None
+    assert result.n_peers_industry_mismatch == 0
+    # Both peers contribute even though INTC has a different industry,
+    # because the filter is disabled when focal is unknown.
+    assert result.n_peers_with_data == 2
+
+
+def test_industry_filter_cache_roundtrip(tmp_path: Path) -> None:
+    """The new fields survive a cache write + read cycle."""
+    client = _ProfiledClient(
+        peer_list=["AMD", "COIN.TO"],
+        financials_by_symbol={
+            "AMD": _profitable_peer([2022, 2023, 2024]),
+            "COIN.TO": _profitable_peer([2022, 2023, 2024]),
+        },
+        industry_by_symbol={"AMD": "Semiconductors", "COIN.TO": "Financial Services"},
+        focal_industry="Semiconductors",
+    )
+    fresh = compute_industry_aggregates(
+        "NVDA", client=client, cache=True, cache_dir=tmp_path,
+    )
+    cached = compute_industry_aggregates(
+        "NVDA", client=client, cache=True, cache_dir=tmp_path,
+    )
+    assert cached.focal_industry == fresh.focal_industry == "Semiconductors"
+    assert cached.n_peers_industry_mismatch == fresh.n_peers_industry_mismatch == 1
+    cached_rejected = [d for d in cached.peers_used if d.industry_mismatch]
+    assert len(cached_rejected) == 1
+    assert cached_rejected[0].industry == "Financial Services"
+
+
+def test_industry_filter_legacy_cache_backward_compat(tmp_path: Path) -> None:
+    """A pre-P1d cache file (no industry/mismatch fields) deserializes cleanly."""
+    legacy_payload = {
+        "industry_aggregates": {
+            "industry_roic_3y_median": 0.10,
+            "industry_gross_margin_3y_std": 0.02,
+        },
+        "peers_used": [
+            {
+                "symbol": "AMD",
+                "n_years": 3,
+                "avg_roic_3y": 0.10,
+                "gm_observations": [0.50, 0.51, 0.52],
+            }
+        ],
+        "n_peers_attempted": 1,
+        "n_peers_with_data": 1,
+    }
+    today = dt.date.today()
+    cache_path = tmp_path / f"NVDA_{today.isoformat()}.json"
+    cache_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    client = _StubClient()  # would error if hit; cache must short-circuit
+    result = compute_industry_aggregates(
+        "NVDA", client=client, cache=True, cache_dir=tmp_path,
+    )
+    assert result.focal_industry is None
+    assert result.n_peers_industry_mismatch == 0
+    assert result.peers_used[0].industry is None
+    assert result.peers_used[0].industry_mismatch is False

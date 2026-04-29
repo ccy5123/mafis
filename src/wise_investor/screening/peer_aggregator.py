@@ -57,6 +57,15 @@ class PeerCapableClient(Protocol):
     """Finnhub-shape client interface this module needs.
 
     The real `FinnhubClient` satisfies it; tests pass a stub.
+
+    `profile()` is OPTIONAL (P1d 2026-04). When the client exposes it,
+    the aggregator reads `profile(symbol).finnhub_industry` to filter
+    out industry-mismatched peers (defensive belt against Finnhub
+    returning cross-category peers like Coinbase as a peer for credit
+    ratings — see data/calibration/peer_audit_2026-04.yaml). When the
+    client doesn't expose `profile()` (older test stubs), the filter
+    silently disables and the aggregator falls back to natural
+    filtering via empty financials.
     """
 
     def peers(self, symbol: str) -> list[str]: ...
@@ -76,12 +85,20 @@ class PeerAggregateDetail:
     Useful for audit: shows which peers contributed and how many years
     of data each one had. Callers that just want the IndustryAggregates
     can ignore this.
+
+    P1d (2026-04) added `industry` (the peer's finnhub_industry as
+    fetched from /stock/profile2, None when unavailable) and
+    `industry_mismatch` (True when an explicit industry filter rejected
+    this peer from ROIC/GM aggregation). Defaults preserve backward
+    compatibility with cached results from before P1d.
     """
 
     symbol: str
     n_years: int
     avg_roic_3y: float | None
     gm_observations: tuple[float, ...]
+    industry: str | None = None
+    industry_mismatch: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,6 +109,8 @@ class PeerAggregateResult:
     peers_used: tuple[PeerAggregateDetail, ...]
     n_peers_attempted: int
     n_peers_with_data: int
+    focal_industry: str | None = None
+    n_peers_industry_mismatch: int = 0
 
 
 def compute_industry_aggregates(
@@ -197,11 +216,22 @@ def compute_industry_aggregates(
     if n_attempted == 0:
         return _empty_result()
 
+    # P1d: explicit industry filter. Fetch focal industry once; per peer,
+    # fetch peer industry inside _build_peer_detail. Mismatch → exclude
+    # from ROIC/GM aggregation. When focal_industry is None (client has
+    # no profile() method, or profile() failed), the filter silently
+    # disables and natural filtering via empty financials applies.
+    focal_industry = _safe_industry(client, sym)
+
     per_peer: list[PeerAggregateDetail] = []
     for peer in peer_list:
         try:
             detail = _build_peer_detail(
-                client, peer, effective_tax_rate, as_of_date=as_of_date,
+                client,
+                peer,
+                effective_tax_rate,
+                as_of_date=as_of_date,
+                focal_industry=focal_industry,
             )
         except Exception as e:
             logger.warning("peer %s aggregation failed: %s", peer, e)
@@ -209,9 +239,18 @@ def compute_industry_aggregates(
         per_peer.append(detail)
 
     n_with_data = sum(1 for d in per_peer if d.n_years > 0)
+    n_industry_mismatch = sum(1 for d in per_peer if d.industry_mismatch)
 
-    # Aggregate computation.
-    roic_values = [d.avg_roic_3y for d in per_peer if d.avg_roic_3y is not None]
+    # Aggregate computation. Industry-mismatched peers are excluded from
+    # both ROIC median and GM std calculations even if they happen to
+    # have financials data. _build_peer_detail already zeroes out
+    # avg_roic_3y/gm_observations for mismatched peers, but the
+    # explicit guard here makes the policy obvious to readers.
+    roic_values = [
+        d.avg_roic_3y
+        for d in per_peer
+        if d.avg_roic_3y is not None and not d.industry_mismatch
+    ]
     if roic_values:
         roic_median: float | None = statistics.median(roic_values)
     else:
@@ -220,6 +259,7 @@ def compute_industry_aggregates(
     pooled_gms = [
         gm
         for d in per_peer
+        if not d.industry_mismatch
         for gm in d.gm_observations
     ]
     if len(pooled_gms) >= 2:
@@ -235,6 +275,8 @@ def compute_industry_aggregates(
         peers_used=tuple(per_peer),
         n_peers_attempted=n_attempted,
         n_peers_with_data=n_with_data,
+        focal_industry=focal_industry,
+        n_peers_industry_mismatch=n_industry_mismatch,
     )
 
     if cache:
@@ -247,24 +289,81 @@ def compute_industry_aggregates(
 # ---------------------------------------------------------------------------
 
 
+def _safe_industry(client: PeerCapableClient, symbol: str) -> str | None:
+    """Best-effort fetch of `client.profile(symbol).finnhub_industry`.
+
+    Returns None on any failure: missing profile() method on the
+    client (older test stubs), Finnhub API error, or any other
+    exception. P1d (2026-04) — used to disable the explicit industry
+    filter gracefully when industry data is unavailable, falling back
+    to natural filtering via empty financials.
+    """
+    profile_fn = getattr(client, "profile", None)
+    if profile_fn is None:
+        return None
+    try:
+        prof = profile_fn(symbol)
+    except Exception as e:
+        logger.debug("profile(%s) failed in peer aggregator: %s", symbol, e)
+        return None
+    return getattr(prof, "finnhub_industry", None)
+
+
 def _build_peer_detail(
     client: PeerCapableClient,
     peer_symbol: str,
     tax_rate: float,
     *,
     as_of_date: dt.date | None = None,
+    focal_industry: str | None = None,
 ) -> PeerAggregateDetail:
     """Compute one peer's 3y avg ROIC + per-year gross margins.
 
     When `as_of_date` is set, peer entries are filtered to filings
     public on/before that date (lookahead-bias guard for back-
     validation). When None, all entries are used (live-mode default).
+
+    P1d (2026-04): when `focal_industry` is provided, the peer's own
+    industry is fetched via `_safe_industry` and compared. A mismatch
+    (peer industry differs OR is None) zeroes out avg_roic_3y and
+    gm_observations so the peer doesn't contribute to industry_median
+    even if it happens to have financials data. When `focal_industry`
+    is None, the filter is disabled (preserves backward compat with
+    clients lacking profile()).
     """
     # IC formula must mirror the focal-ticker adapter (#3-deep, 2026-04):
     # IC = Total Assets − Cash. Using the same definition for ticker
     # and peers is what makes the §10 advantage calculation
     # (ticker_roic − industry_median) meaningful.
     from wise_investor.data.finnhub import extract_field
+
+    peer_industry = _safe_industry(client, peer_symbol)
+
+    # Mismatch judgment:
+    #   focal None              → filter disabled (backward compat)
+    #   focal=A, peer=A         → ok
+    #   focal=A, peer=None      → mismatch (peer.industry unavailable
+    #                             — could be cross-listing like
+    #                             COIN.TO; safer to reject)
+    #   focal=A, peer=B (A≠B)   → mismatch
+    if focal_industry is None:
+        industry_mismatch = False
+    else:
+        industry_mismatch = peer_industry != focal_industry
+
+    if industry_mismatch:
+        # Don't even fetch financials for an industry-mismatched peer:
+        # the ROIC value would be excluded anyway, and we save an API
+        # call. The detail still goes into peers_used so audit trails
+        # show why this peer was rejected.
+        return PeerAggregateDetail(
+            symbol=peer_symbol,
+            n_years=0,
+            avg_roic_3y=None,
+            gm_observations=tuple(),
+            industry=peer_industry,
+            industry_mismatch=True,
+        )
 
     resp = client.financials(peer_symbol, freq="annual")
     entries = list(getattr(resp, "data", []) or [])
@@ -317,6 +416,8 @@ def _build_peer_detail(
         n_years=len(entries),
         avg_roic_3y=avg_roic_3y,
         gm_observations=tuple(yearly_gm[:3]),  # also cap at most-recent 3
+        industry=peer_industry,
+        industry_mismatch=False,
     )
 
 
@@ -374,11 +475,15 @@ def _serialize(result: PeerAggregateResult) -> dict:
                 "n_years": d.n_years,
                 "avg_roic_3y": d.avg_roic_3y,
                 "gm_observations": list(d.gm_observations),
+                "industry": d.industry,
+                "industry_mismatch": d.industry_mismatch,
             }
             for d in result.peers_used
         ],
         "n_peers_attempted": result.n_peers_attempted,
         "n_peers_with_data": result.n_peers_with_data,
+        "focal_industry": result.focal_industry,
+        "n_peers_industry_mismatch": result.n_peers_industry_mismatch,
     }
 
 
@@ -390,6 +495,8 @@ def _deserialize(payload: dict) -> PeerAggregateResult:
             n_years=p["n_years"],
             avg_roic_3y=p["avg_roic_3y"],
             gm_observations=tuple(p["gm_observations"]),
+            industry=p.get("industry"),
+            industry_mismatch=p.get("industry_mismatch", False),
         )
         for p in payload.get("peers_used", [])
     )
@@ -401,6 +508,8 @@ def _deserialize(payload: dict) -> PeerAggregateResult:
         peers_used=peers,
         n_peers_attempted=payload["n_peers_attempted"],
         n_peers_with_data=payload["n_peers_with_data"],
+        focal_industry=payload.get("focal_industry"),
+        n_peers_industry_mismatch=payload.get("n_peers_industry_mismatch", 0),
     )
 
 
