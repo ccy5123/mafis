@@ -299,12 +299,28 @@ def _build_annual(entry: Any, tax_rate: float) -> AnnualFinancials | None:
     Returns None when the entry doesn't carry a fiscal year or has no
     extractable income-statement values — those rows would only pollute
     downstream proxy computations.
+
+    # @MX:ANCHOR: IC formula choice — Total Assets minus Cash
+    # @MX:REASON: Calibration finding (#3-deep, 2026-04, ledger
+    #   v2.0_2018-06-30): the prior `debt + equity - cash` formula was
+    #   broken by case-by-case XBRL tag mismatches (HD's
+    #   LongTermDebtAndCapitalLeaseObligations missed; BRK-B's
+    #   insurance-holding XBRL invisible to our tag list; etc.). Each
+    #   new ticker shape needed fresh debugging. Switching to
+    #   IC = Total Assets - Cash uses two universal tags
+    #   (us-gaap_Assets + us-gaap_CashAndCashEquivalentsAtCarryingValue)
+    #   that every US SEC filer reports, including conglomerates and
+    #   insurance holdings. The trade-off: this IC includes operating
+    #   liabilities (AP, accrued, deferred revenue), so ROIC is lower
+    #   than the McKinsey NOPAT/IC ROIC by a constant factor, but the
+    #   factor applies identically to ticker and peers — the §10
+    #   advantage calculation (ticker − industry_median) is preserved.
     """
     # Importing here keeps the module importable even when finnhub.py's
     # settings dependency is uninitialized (e.g. tests that don't touch
-    # the real client). `extract_field` and `total_debt` are pure helpers
-    # over the FinancialsEntry shape.
-    from wise_investor.data.finnhub import extract_field, total_debt
+    # the real client). `extract_field` is a pure helper over the
+    # FinancialsEntry shape.
+    from wise_investor.data.finnhub import extract_field
 
     if getattr(entry, "year", None) is None:
         return None
@@ -313,32 +329,23 @@ def _build_annual(entry: Any, tax_rate: float) -> AnnualFinancials | None:
     gross_profit = extract_field(entry, "gross_profit")
     operating_income = extract_field(entry, "operating_income")
 
-    # NOPAT — the simplest derivation that keeps live screening operating
-    # consistently with historical_adapter.py. Effective-tax derivation
-    # from the filing itself is a refinement for Step 5d.
+    # NOPAT — operating income × (1 − effective tax rate). Effective-tax
+    # derivation from the filing itself is a separate refinement.
     if operating_income is not None:
         nopat: float | None = operating_income * (1.0 - tax_rate)
     else:
         nopat = None
 
-    debt = total_debt(entry)
-    equity = extract_field(entry, "total_stockholders_equity")
+    # Invested Capital = Total Assets − Cash. Two tags only.
+    total_assets = extract_field(entry, "total_assets")
     cash = extract_field(entry, "cash_and_cash_equivalents")
-    if equity is not None:
-        ic_raw = (debt or 0.0) + equity - (cash or 0.0)
-        # Phase A guard (HD calibration finding, 2026-04): the formula
-        # debt + equity - cash flips negative for buyback-heavy
-        # companies whose accumulated cash exceeds debt + equity.
-        # ROIC = NOPAT / IC then becomes a sign-flipped pseudo-number
-        # (HD FY2017: IC=-0.58B, NOPAT=+11.6B → ROIC=-1993%) that
-        # contaminates the §10 advantage calculation downstream.
-        # Refusing to compute it is more honest than reporting a
-        # nonsensical value. The deeper fix — debt extraction
-        # auditing + IC formula revision — is tracked separately as
-        # the #3-deep ("Phase B") infrastructure item.
-        invested_capital: float | None = ic_raw if ic_raw > 0 else None
+    if total_assets is None:
+        invested_capital: float | None = None
     else:
-        invested_capital = None
+        ic_raw = total_assets - (cash or 0.0)
+        # Edge case: if cash exceeds total assets (impossible but
+        # defensive), refuse to compute. Phase A guard preserved.
+        invested_capital = ic_raw if ic_raw > 0 else None
 
     return AnnualFinancials(
         fiscal_year=entry.year,

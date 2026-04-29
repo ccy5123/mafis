@@ -260,7 +260,11 @@ def _build_peer_detail(
     public on/before that date (lookahead-bias guard for back-
     validation). When None, all entries are used (live-mode default).
     """
-    from wise_investor.data.finnhub import extract_field, total_debt
+    # IC formula must mirror the focal-ticker adapter (#3-deep, 2026-04):
+    # IC = Total Assets − Cash. Using the same definition for ticker
+    # and peers is what makes the §10 advantage calculation
+    # (ticker_roic − industry_median) meaningful.
+    from wise_investor.data.finnhub import extract_field
 
     resp = client.financials(peer_symbol, freq="annual")
     entries = list(getattr(resp, "data", []) or [])
@@ -289,12 +293,11 @@ def _build_peer_detail(
 
         if operating_income is None:
             continue
-        debt = total_debt(entry)
-        equity = extract_field(entry, "total_stockholders_equity")
+        total_assets = extract_field(entry, "total_assets")
         cash = extract_field(entry, "cash_and_cash_equivalents")
-        if equity is None:
+        if total_assets is None:
             continue
-        ic = (debt or 0.0) + equity - (cash or 0.0)
+        ic = total_assets - (cash or 0.0)
         if ic <= 0:
             continue
         nopat = operating_income * (1.0 - tax_rate)

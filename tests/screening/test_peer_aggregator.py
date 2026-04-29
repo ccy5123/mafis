@@ -84,8 +84,18 @@ class _StubClient:
         )
 
 
-def _annual(year, *, revenue, gross, operating, debt, equity, cash) -> _Entry:
-    """Build a Finnhub-shape annual entry with the IC/BS line items."""
+def _annual(
+    year, *, revenue, gross, operating, debt, equity, cash,
+    total_assets: float | None = None,
+) -> _Entry:
+    """Build a Finnhub-shape annual entry with the IC/BS line items.
+
+    `total_assets` defaults to debt + equity (clean BS identity for
+    fixtures that don't track operating liabilities). Tests that need
+    a specific total-assets shape override.
+    """
+    if total_assets is None:
+        total_assets = (debt or 0.0) + (equity or 0.0)
     ic = [
         _Item("us-gaap_Revenues", revenue),
         _Item("us-gaap_GrossProfit", gross),
@@ -95,6 +105,7 @@ def _annual(year, *, revenue, gross, operating, debt, equity, cash) -> _Entry:
         _Item("us-gaap_LongTermDebt", debt),
         _Item("us-gaap_StockholdersEquity", equity),
         _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", cash),
+        _Item("us-gaap_Assets", total_assets),
     ]
     return _Entry(year=year, form="10-K", report=_Report(ic=ic, bs=bs))
 

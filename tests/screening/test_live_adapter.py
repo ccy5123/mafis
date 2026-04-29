@@ -87,9 +87,21 @@ class _StubClient:
         return self.profile_obj
 
 
-def _annual(year, *, revenue, gross, operating, debt, equity, cash) -> _Entry:
+def _annual(
+    year, *, revenue, gross, operating, debt, equity, cash,
+    total_assets: float | None = None,
+) -> _Entry:
     """A canonical annual filing with all balance-sheet/income items the
-    extractor looks for, on the most-common XBRL concepts."""
+    extractor looks for, on the most-common XBRL concepts.
+
+    `total_assets` defaults to `debt + equity` (a clean balance-sheet
+    identity for fixtures that don't track operating liabilities) so
+    the new IC formula (Total Assets − Cash) produces the same number
+    the legacy `Debt + Equity − Cash` formula did. Tests that need a
+    different total-assets value override explicitly.
+    """
+    if total_assets is None:
+        total_assets = (debt or 0.0) + (equity or 0.0)
     ic = [
         _Item("us-gaap_Revenues", revenue),
         _Item("us-gaap_GrossProfit", gross),
@@ -99,6 +111,7 @@ def _annual(year, *, revenue, gross, operating, debt, equity, cash) -> _Entry:
         _Item("us-gaap_LongTermDebt", debt),
         _Item("us-gaap_StockholdersEquity", equity),
         _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", cash),
+        _Item("us-gaap_Assets", total_assets),
     ]
     return _Entry(year=year, form="10-K", report=_Report(ic=ic, bs=bs))
 
@@ -160,31 +173,32 @@ def test_nopat_uses_custom_tax_rate() -> None:
     assert funds.annual[0].nopat == pytest.approx(200 * 0.70)
 
 
-def test_invested_capital_is_debt_plus_equity_minus_cash() -> None:
-    client = _StubClient(annual=[
-        _annual(2024, revenue=1000, gross=600, operating=200, debt=100, equity=400, cash=50),
-    ])
-    funds = fetch_live_fundamentals_us("TEST", client=client)
-    assert funds.annual[0].invested_capital == 100 + 400 - 50
-
-
-def test_missing_equity_yields_none_invested_capital() -> None:
-    bs = [_Item("us-gaap_LongTermDebt", 100)]
+def test_invested_capital_is_total_assets_minus_cash() -> None:
+    """Constitution §10 IC formula (post #3-deep, 2026-04):
+    IC = Total Assets - Cash. Universal across SEC US filers because
+    `us-gaap_Assets` and `us-gaap_CashAndCashEquivalentsAtCarryingValue`
+    are mandatory tags."""
+    bs = [
+        _Item("us-gaap_Assets", 1_000),
+        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 200),
+    ]
     entry = _Entry(year=2024, report=_Report(
-        ic=[_Item("us-gaap_OperatingIncomeLoss", 200)],
+        ic=[_Item("us-gaap_OperatingIncomeLoss", 100)],
         bs=bs,
     ))
     client = _StubClient(annual=[entry])
     funds = fetch_live_fundamentals_us("TEST", client=client)
-    assert funds.annual[0].invested_capital is None
+    assert funds.annual[0].invested_capital == 1_000 - 200
 
 
-def test_missing_debt_treated_as_zero() -> None:
-    """Debt-free company shouldn't lose its IC just because Finnhub's
-    filing didn't carry a Long-term-debt entry."""
+def test_missing_total_assets_yields_none_invested_capital() -> None:
+    """When the BS doesn't surface us-gaap_Assets at all, IC is None.
+    Stage 2's _evaluate_moat then routes the axis through NEED_LLM
+    rather than emitting a fabricated IC."""
     bs = [
+        # Total Assets missing entirely
         _Item("us-gaap_StockholdersEquity", 500),
-        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 100),
+        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 50),
     ]
     entry = _Entry(year=2024, report=_Report(
         ic=[_Item("us-gaap_OperatingIncomeLoss", 200)],
@@ -192,44 +206,50 @@ def test_missing_debt_treated_as_zero() -> None:
     ))
     client = _StubClient(annual=[entry])
     funds = fetch_live_fundamentals_us("TEST", client=client)
-    assert funds.annual[0].invested_capital == 500 - 100
+    assert funds.annual[0].invested_capital is None
 
 
-def test_negative_invested_capital_yields_none() -> None:
-    """Phase A guard (HD calibration finding, 2026-04): when
-    debt + equity - cash flips negative — buyback-heavy companies
-    whose accumulated cash exceeds debt + equity — ROIC = NOPAT / IC
-    becomes a sign-flipped pseudo-number. Refuse to compute IC at
-    all so downstream proxies (§10 advantage, peer median) don't
-    inherit the corruption.
-
-    HD FY2017 was the canonical case:
-      debt=1.56B, equity=1.45B, cash=3.60B → IC=-0.58B
-      NOPAT=+11.6B → ROIC=-1993% (clearly nonsensical)
-    """
+def test_missing_cash_treated_as_zero() -> None:
+    """Cash absent from the BS doesn't kill IC — we just don't subtract
+    anything. Some smaller filers under-report cash items; their full
+    asset base still represents capital deployed."""
     bs = [
-        _Item("us-gaap_LongTermDebt", 1_560_000_000),
-        _Item("us-gaap_StockholdersEquity", 1_454_000_000),
-        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 3_595_000_000),
+        _Item("us-gaap_Assets", 1_000),
+        # No cash entry
     ]
-    entry = _Entry(year=2017, report=_Report(
-        ic=[_Item("us-gaap_OperatingIncomeLoss", 14_681_000_000)],
+    entry = _Entry(year=2024, report=_Report(
+        ic=[_Item("us-gaap_OperatingIncomeLoss", 200)],
+        bs=bs,
+    ))
+    client = _StubClient(annual=[entry])
+    funds = fetch_live_fundamentals_us("TEST", client=client)
+    assert funds.annual[0].invested_capital == 1_000
+
+
+def test_cash_exceeds_assets_yields_none_invested_capital() -> None:
+    """Defensive guard: if cash > total assets (impossible accounting
+    state but possible from extraction errors), refuse to compute IC.
+    Replaces the obsolete Phase A negative-IC guard which was tied to
+    the previous `Debt + Equity - Cash` formula."""
+    bs = [
+        _Item("us-gaap_Assets", 100),
+        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 200),  # > assets
+    ]
+    entry = _Entry(year=2024, report=_Report(
+        ic=[_Item("us-gaap_OperatingIncomeLoss", 50)],
         bs=bs,
     ))
     client = _StubClient(annual=[entry])
     funds = fetch_live_fundamentals_us("TEST", client=client)
     assert funds.annual[0].invested_capital is None
-    # NOPAT is still computable — the guard only refuses IC.
-    assert funds.annual[0].nopat is not None
 
 
 def test_zero_invested_capital_yields_none() -> None:
-    """Edge of the guard: IC == 0 should also be refused (avoids
-    division by zero in the ROIC computation downstream)."""
+    """When Total Assets exactly equals Cash, IC is 0 — refuse to
+    compute (guards against /0 in ROIC downstream)."""
     bs = [
-        _Item("us-gaap_LongTermDebt", 100),
-        _Item("us-gaap_StockholdersEquity", 200),
-        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 300),  # exactly cancels
+        _Item("us-gaap_Assets", 300),
+        _Item("us-gaap_CashAndCashEquivalentsAtCarryingValue", 300),  # exact cancel
     ]
     entry = _Entry(year=2024, report=_Report(
         ic=[_Item("us-gaap_OperatingIncomeLoss", 50)],
