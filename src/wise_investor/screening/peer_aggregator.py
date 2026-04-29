@@ -368,6 +368,29 @@ def _build_peer_detail(
     resp = client.financials(peer_symbol, freq="annual")
     entries = list(getattr(resp, "data", []) or [])
 
+    # P1b (2026-04): EDGAR companyfacts fallback for ADR peers. When a
+    # peer is an ADR/20-F filer (e.g., Finnhub returns ASML.AS as a
+    # peer of ASML, but neither has 10-K data in financials-reported),
+    # fetch directly from SEC. Same shape, same IC formula, same
+    # downstream code — entries just come from a different source.
+    if not entries:
+        try:
+            from wise_investor.data.edgar_facts import (
+                EdgarFactsError,
+                fetch_financials_via_edgar,
+            )
+            edgar_resp = fetch_financials_via_edgar(peer_symbol)
+            entries = list(getattr(edgar_resp, "data", []) or [])
+            if entries:
+                logger.info(
+                    "peer %s: Finnhub empty, EDGAR fallback supplied %d entries",
+                    peer_symbol, len(entries),
+                )
+        except EdgarFactsError as e:
+            logger.debug("peer %s: EDGAR fallback failed: %s", peer_symbol, e)
+        except Exception as e:  # pragma: no cover
+            logger.debug("peer %s: EDGAR fallback raised: %s", peer_symbol, e)
+
     if as_of_date is not None:
         # Reuse the same filing-lag logic as the historical adapter to
         # keep the lookahead semantics consistent across the codebase.

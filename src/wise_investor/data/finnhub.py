@@ -243,40 +243,64 @@ class FinancialsResponse(_Model):
 
 # Map our logical field names to the ordered list of XBRL concepts to try.
 # Finnhub (and SEC) expose multiple concept variants; we search in order.
+#
+# `ifrs-full_*` variants (P1b 2026-04): SEC EDGAR companyfacts API also
+# indexes IFRS-reporting filers (20-F foreign issuers like TSM, NVO),
+# exposing concepts under the `ifrs-full` namespace. The EDGAR fallback
+# in screening adapters labels concepts as `{namespace}_{ConceptName}`
+# (matching the Finnhub convention with underscore separator), so the
+# same `extract_field` logic handles both us-gaap and ifrs-full sources
+# without renaming. Audit trail preserved: the raw concept tag in
+# FinancialLineItem.concept tells the reader which standard the value
+# came from.
 CONCEPT_CANDIDATES: dict[str, list[str]] = {
     "revenue": [
         "us-gaap_Revenues",
         "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
         "us-gaap_SalesRevenueNet",
         "us-gaap_RevenueFromContractWithCustomerIncludingAssessedTax",
+        "ifrs-full_Revenue",
     ],
-    "gross_profit": ["us-gaap_GrossProfit"],
+    "gross_profit": [
+        "us-gaap_GrossProfit",
+        "ifrs-full_GrossProfit",
+    ],
     "operating_income": [
         "us-gaap_OperatingIncomeLoss",
+        "ifrs-full_ProfitLossFromOperatingActivities",
     ],
     "net_income": [
         "us-gaap_NetIncomeLoss",
         "us-gaap_ProfitLoss",
+        "ifrs-full_ProfitLoss",
     ],
     "eps_diluted": [
         "us-gaap_EarningsPerShareDiluted",
+        "ifrs-full_DilutedEarningsLossPerShare",
     ],
     "eps_basic": [
         "us-gaap_EarningsPerShareBasic",
+        "ifrs-full_BasicEarningsLossPerShare",
     ],
     "depreciation_and_amortization": [
         "us-gaap_DepreciationDepletionAndAmortization",
         "us-gaap_DepreciationAndAmortization",
         "us-gaap_Depreciation",
+        "ifrs-full_DepreciationAndAmortisationExpense",
     ],
-    "total_assets": ["us-gaap_Assets"],
+    "total_assets": [
+        "us-gaap_Assets",
+        "ifrs-full_Assets",
+    ],
     "total_stockholders_equity": [
         "us-gaap_StockholdersEquity",
         "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+        "ifrs-full_Equity",
     ],
     "cash_and_cash_equivalents": [
         "us-gaap_CashAndCashEquivalentsAtCarryingValue",
         "us-gaap_Cash",
+        "ifrs-full_CashAndCashEquivalents",
     ],
     "long_term_debt": [
         # Calibration finding (#3-deep, 2026-04): retailers and other

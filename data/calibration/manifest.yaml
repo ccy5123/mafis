@@ -53,22 +53,34 @@ tickers:
   - { symbol: MCO,   market: US,     rationale: "Credit ratings — regulatory + reputation moat" }
 
   # --- Bottleneck axis exemplars (process bottlenecks) ---
-  # Note (#4 2026-04): TSM and ASML are foreign issuers (TWSE, AEX)
-  # filing 20-F, not 10-K. Finnhub /stock/financials-reported indexes
-  # SEC US-GAAP XBRL only, so these return 0 historical entries. They
-  # show up as "REJECT — ROIC <3 years" in calibration runs not because
-  # the rubric judged them, but because data is unavailable. Until an
-  # alternate fundamentals source is wired (EDGAR 20-F parser or
-  # paid-tier provider), back-validation effectively excludes them.
-  # They stay in the manifest as a coverage-gap reminder.
+  # Note (#4 2026-04, updated P1b 2026-04): TSM and ASML are foreign
+  # issuers (TWSE, AEX) filing 20-F, not 10-K. Finnhub
+  # /stock/financials-reported indexes SEC US-GAAP 10-K XBRL only, so
+  # for a long time these tickers had 0 historical entries from the
+  # primary fundamentals source.
+  #
+  # P1b adds an EDGAR companyfacts fallback that fetches XBRL data
+  # directly from data.sec.gov for any ticker Finnhub returns empty
+  # for. Coverage now restored:
+  #   - TSM:  ifrs-full, dual-currency (USD preferred), 8 FY (2017-2024)
+  #   - ASML: us-gaap on 20-F, EUR (ratios self-cancelling), 17 FY (2009-2025)
+  #   - NVO:  ifrs-full, DKK, 9 FY (2017-2025)
+  #
+  # As of 2018-06-30 calibration date, ASML has 9 years available
+  # (2009-2017) → quantitative ROIC trend possible. TSM and NVO have
+  # only 1-2 years pre-2018 → still trigger the §10 Auto-PASS 1
+  # (insufficient ROIC history) but for honest data-availability
+  # reasons rather than a coverage gap.
   #
   # Peer audit (P0b 2026-04): Finnhub /stock/peers returns home-listing
   # primary tickers for these ADRs (TSM → 5× .TW, ASML → 3× .AS) which
-  # Finnhub indexes neither in /stock/profile2.finnhubIndustry nor in
-  # financials-reported. Net effect: peer set has 0 usable peers →
-  # industry_median ROIC = None → moat axis routes to NEED_LLM. Same
-  # data source (EDGAR 20-F or paid tier) would unlock both focal and
-  # peer-set financials.
+  # Finnhub doesn't index. With P1b's EDGAR fallback, peer aggregation
+  # also tries EDGAR for empty-Finnhub peers. Domestic peers stay on
+  # Finnhub; ADR-style peers (.TW/.AS/.CO) usually still fail because
+  # SEC EDGAR only indexes US-listed entities, not their home-exchange
+  # tickers — but P1d's explicit industry filter rejects those upfront
+  # anyway, so industry_median ROIC quality is now bounded by the same
+  # set of US-listed peers that work for any other ticker.
   - { symbol: TSM,   market: US-ADR, rationale: "Leading-edge fab process — technical bottleneck pure-play (NOTE: Finnhub financials-reported coverage gap, see manifest header)" }
   - { symbol: ASML,  market: US-ADR, rationale: "EUV lithography monopoly — technical bottleneck (NOTE: same coverage gap as TSM)" }
   - { symbol: CDNS,  market: US,     rationale: "EDA tools duopoly — technical bottleneck" }

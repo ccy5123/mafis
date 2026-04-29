@@ -174,8 +174,35 @@ def fetch_live_fundamentals_us(
 
     # --- annual ---
     annual_resp = client.financials(sym, freq="annual")
+    finnhub_entries = list(getattr(annual_resp, "data", []) or [])
+
+    # P1b (2026-04): EDGAR companyfacts fallback. Finnhub indexes only
+    # 10-K US-GAAP filings, leaving ADRs (TSM/ASML/NVO via 20-F) with
+    # zero entries. SEC EDGAR XBRL exposes the same fundamentals (in
+    # ifrs-full or us-gaap, native or USD) for those issuers. We only
+    # try the fallback when Finnhub returns nothing — for the 95%+ of
+    # the universe Finnhub covers, this is a no-op zero-cost path.
+    if not finnhub_entries:
+        try:
+            from wise_investor.data.edgar_facts import (
+                EdgarFactsError,
+                fetch_financials_via_edgar,
+            )
+            edgar_resp = fetch_financials_via_edgar(sym)
+            finnhub_entries = list(getattr(edgar_resp, "data", []) or [])
+            if finnhub_entries:
+                logger.info(
+                    "%s: Finnhub returned 0 annual entries; "
+                    "EDGAR companyfacts fallback supplied %d",
+                    sym, len(finnhub_entries),
+                )
+        except EdgarFactsError as e:
+            logger.debug("%s: EDGAR fallback failed: %s", sym, e)
+        except Exception as e:  # pragma: no cover — defensive
+            logger.debug("%s: EDGAR fallback raised: %s", sym, e)
+
     annual: list[AnnualFinancials] = []
-    for entry in getattr(annual_resp, "data", []) or []:
+    for entry in finnhub_entries:
         ann = _build_annual(entry, effective_tax_rate)
         if ann is not None:
             annual.append(ann)
