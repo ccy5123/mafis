@@ -141,14 +141,17 @@ def _format_frontier_proxies(proxies: FrontierProxies) -> str:
 
 
 def _format_bottleneck_proxies(proxies: BottleneckProxies) -> str:
+    # Constitution §15 also defines `hhi`, `top3_market_share_sum`, and
+    # `each_top3_member_share` as market-concentration PASS conditions.
+    # None are surfaced here because none are computed quantitatively
+    # (P0a 2026-04): they require industry-report data sources not
+    # available in retail-friendly free APIs. Stage 3 LLM verifies the
+    # market-concentration angle qualitatively from 10-K Risk Factors
+    # prose using the constitution §15 axis definition.
     parts = []
     if proxies.top5_customer_share is not None:
         parts.append(
             f"  Top-5 customer revenue share: {proxies.top5_customer_share:.2f}"
-        )
-    if proxies.hhi is not None:
-        parts.append(
-            f"  HHI (uniform top-5 approximation): {proxies.hhi}"
         )
     parts.append(
         f"  Diversification-attempt signals (recent count): "
@@ -201,7 +204,6 @@ def build_stage3_prompt(
 
     bottleneck_p = _format_bottleneck_proxies(BottleneckProxies(
         top5_customer_share=prefilter.bottleneck.details.get("top5_customer_share"),
-        hhi=prefilter.bottleneck.details.get("hhi"),
         diversification_attempt_signals=prefilter.bottleneck.details.get(
             "diversification_attempt_signals", 0
         ),

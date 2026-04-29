@@ -62,7 +62,7 @@ def _advancing_prefilter(symbol: str = "STUB") -> PrefilterResult:
         ),
         bottleneck=AxisVerdict(
             axis="bottleneck", verdict="NEED_LLM", reason="x",
-            details={"top5_customer_share": 0.55, "hhi": 605,
+            details={"top5_customer_share": 0.55,
                      "diversification_attempt_signals": 0},
         ),
         primary_segment=SegmentBreakdown(

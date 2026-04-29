@@ -128,10 +128,20 @@ class FrontierProxies:
 
 @dataclass(frozen=True)
 class BottleneckProxies:
-    """Quantitative slice for the bottleneck axis (constitution §15)."""
+    """Quantitative slice for the bottleneck axis (constitution §15).
+
+    Note on missing fields (constitution §15 implementation gap, P0a 2026-04):
+    Constitution §15 also defines `hhi` (concentrated *market* Herfindahl,
+    >=2500), `top3_market_share_sum` (>=0.7), and `each_top3_member_share`
+    (>=0.15) as PASS conditions. None are computed here because they
+    require industry-report data sources (IBISWorld / Statista / Gartner)
+    not available in retail-friendly free APIs. Stage 2 currently relies
+    on `top5_customer_share` (RAG-extracted) and `diversification_attempt_signals`
+    only; the §15 `hhi >= 2500` market-concentration path is verified
+    qualitatively at Stage 3 by the LLM from 10-K Risk Factors prose.
+    """
 
     top5_customer_share: float | None
-    hhi: int | None  # Herfindahl on customer concentration; 0-10000
     diversification_attempt_signals: int
 
 

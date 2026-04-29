@@ -205,37 +205,26 @@ def compute_frontier_proxies(funds: TickerFundamentals) -> FrontierProxies:
 # ---------------------------------------------------------------------------
 
 
-def _hhi_from_share_distribution(shares: list[float]) -> int | None:
-    """Herfindahl index on a share distribution. Shares should be in
-    [0, 1] and need not sum to 1 (the residual is treated as a long
-    tail of small competitors). Returns None when the input is empty.
-
-    Output is scaled to 0-10000 (square of percentages, US convention).
-    """
-    if not shares:
-        return None
-    total = sum((s * 100.0) ** 2 for s in shares)
-    return int(round(total))
-
-
 def compute_bottleneck_proxies(funds: TickerFundamentals) -> BottleneckProxies:
-    """Constitution §15 bottleneck block."""
-    hhi: int | None = None
-    if funds.top5_customer_share is not None:
-        # Without per-customer breakdown we approximate HHI on the
-        # top-5 share by assuming uniform distribution within the top
-        # five. Crude, but the absolute number isn't what matters —
-        # the §15 threshold (>=2500) is a signal of "highly
-        # concentrated," and a 40% top-5 share approximated this way
-        # already lands at HHI 320, well below 2500. So this is mostly
-        # a placeholder; Stage 3 should refine when per-customer data
-        # is available.
-        per_customer = funds.top5_customer_share / 5.0
-        hhi = _hhi_from_share_distribution([per_customer] * 5)
+    """Constitution §15 bottleneck block.
 
+    P0a (2026-04) — HHI removal: a previous version of this function
+    computed an "HHI" by assuming a uniform distribution across the top
+    five customers. That was a category error: constitution §15 defines
+    `hhi` as *market* Herfindahl (`concentrated market`, threshold 2500),
+    not customer concentration. The approximated value (HHI ~320 for a
+    40% top-5 share) was never compared against any threshold in
+    `_evaluate_bottleneck` and only surfaced verbatim to the Stage 3
+    LLM, where the misleading "HHI" label risked the LLM treating
+    customer concentration as market concentration.
+
+    The §15 market-HHI path is now treated as a Stage 3 qualitative
+    check (LLM reads Risk Factors / industry context). When a free
+    industry-report data source becomes available, the field can be
+    re-added and wired into the prefilter gate.
+    """
     return BottleneckProxies(
         top5_customer_share=funds.top5_customer_share,
-        hhi=hhi,
         diversification_attempt_signals=funds.diversification_attempt_signals,
     )
 

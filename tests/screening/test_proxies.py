@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from wise_investor.screening.proxies import (
-    _hhi_from_share_distribution,
     _ols_slope,
     compute_bottleneck_proxies,
     compute_frontier_proxies,
@@ -80,16 +79,6 @@ def test_ols_slope_constant_x_returns_none() -> None:
 def test_ols_slope_too_few_points_returns_none() -> None:
     assert _ols_slope([(1.0, 2.0)]) is None
     assert _ols_slope([]) is None
-
-
-def test_hhi_from_uniform_top5_share() -> None:
-    """Top-5 share of 50% spread evenly = HHI 500 (5 × 10²)."""
-    out = _hhi_from_share_distribution([0.10] * 5)
-    assert out == 500
-
-
-def test_hhi_empty_returns_none() -> None:
-    assert _hhi_from_share_distribution([]) is None
 
 
 # ---------------------------------------------------------------------------
@@ -361,15 +350,12 @@ def test_bottleneck_pass_through_top5() -> None:
     funds = _make_funds(top5=0.55)
     out = compute_bottleneck_proxies(funds)
     assert out.top5_customer_share == 0.55
-    # HHI computed as if top-5 is uniform → 5 × 11² = 605.
-    assert out.hhi == 605
 
 
-def test_bottleneck_no_top5_yields_no_hhi() -> None:
+def test_bottleneck_no_top5_passthrough() -> None:
     funds = _make_funds(top5=None)
     out = compute_bottleneck_proxies(funds)
     assert out.top5_customer_share is None
-    assert out.hhi is None
 
 
 def test_bottleneck_diversification_signals_passthrough() -> None:

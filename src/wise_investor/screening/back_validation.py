@@ -14,7 +14,10 @@ later. Two outcome metrics:
      a specific axis at calibration_date, did the axis's
      quantitative claim still hold 5 years later?
         - Moat axis: ROIC advantage at T+5 still ≥ 5pp threshold
-        - Bottleneck axis: top-5 customer share / HHI still elevated
+        - Bottleneck axis: top-5 customer share still elevated
+          (constitution §15 also defines `hhi`, `top3_market_share_sum`,
+          `each_top3_member_share`; not computed in v1 — see
+          `BottleneckProxies` docstring for the implementation gap)
         - New Frontier axis: harder to verify automatically
           (imitation evidence requires news/analyst data); skipped
           in v1, reported as "verification deferred"
@@ -229,12 +232,17 @@ def _verify_moat_persistence(
 def _verify_bottleneck_persistence(
     funds_at_horizon: TickerFundamentals,
 ) -> AxisPersistenceOutcome:
-    """Top-5 customer share / HHI at T+horizon stays elevated.
+    """Top-5 customer share at T+horizon stays elevated.
 
     yfinance doesn't provide customer concentration, so this verifier
     is mostly going to return "couldn't verify" until the real
     Finnhub/EDGAR adapter lands. Kept here so the contract is
     visible even when v1 can't satisfy it.
+
+    Note: constitution §15 also lists `hhi >= 2500` (concentrated market)
+    and oligopoly metrics (`top3_market_share_sum`, `each_top3_member_share`)
+    as PASS conditions. None are computed quantitatively in v1 — the
+    market-concentration angle is a Stage 3 LLM qualitative check.
     """
     proxies = compute_bottleneck_proxies(funds_at_horizon)
     if proxies.top5_customer_share is None:

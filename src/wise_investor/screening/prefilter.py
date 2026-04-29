@@ -55,7 +55,13 @@ MOAT_GM_VARIABILITY_RATIO_MAX: float = 1.2  # own_std ≤ 1.2× industry_std
 FRONTIER_MIN_YEARS_SINCE_INTRO: int = 3
 
 BOTTLENECK_TOP5_CUSTOMER_SHARE_MIN: float = 0.40  # 40%
-BOTTLENECK_HHI_MIN: int = 2500
+# Constitution §15 also defines `hhi >= 2500` as a PASS condition for
+# concentrated *market* (not customer) Herfindahl. P0a (2026-04) removed
+# the constant and the proxy computation: the previous "HHI" was a
+# customer-concentration approximation, not market HHI, and was never
+# compared against this threshold anyway. Market-HHI verification is
+# delegated to Stage 3 LLM until a free industry-report data source
+# becomes available.
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +392,6 @@ def evaluate_universe(
 
 
 __all__ = [
-    "BOTTLENECK_HHI_MIN",
     "BOTTLENECK_TOP5_CUSTOMER_SHARE_MIN",
     "FRONTIER_MIN_YEARS_SINCE_INTRO",
     "MOAT_GM_VARIABILITY_RATIO_MAX",

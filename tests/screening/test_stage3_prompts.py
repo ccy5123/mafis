@@ -124,7 +124,6 @@ def _stub_prefilter(symbol: str = "STUB") -> PrefilterResult:
             reason="customer concentration above threshold",
             details={
                 "top5_customer_share": 0.55,
-                "hhi": 605,
                 "diversification_attempt_signals": 0,
             },
         ),
