@@ -10,6 +10,21 @@
 # influence universe membership. If a future revision adds or
 # removes a ticker, the rationale field must justify the change in
 # axis-coverage terms — not "I want to track this stock."
+#
+# RAG indexing policy (P1a 2026-04):
+# Stage 2 prefilter consumes 10-K-derived signals (top5_customer_share,
+# diversification_attempt_signals) from a ChromaDB collection. Indexing
+# is MANUAL and incremental — the calibration runner does not auto-
+# index. Before running back-validation with RAG signals enabled,
+# populate the universe via:
+#
+#     python scripts/index_universe.py
+#
+# This downloads ~110MB of 10-K HTML once into data/edgar_cache/ and
+# embeds ~5,500 chunks into ChromaDB (~30-50MB). KR tickers and SPY
+# are skipped (no SEC EDGAR coverage). US-ADR tickers (TSM/ASML/NVO)
+# fail at EDGAR download (they file 20-F not 10-K) — recorded as a
+# coverage gap until P1b adds an ADR fallback.
 
 metadata:
   version: 1

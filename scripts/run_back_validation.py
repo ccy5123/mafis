@@ -16,6 +16,21 @@ Constitution alignment: this is the §22 back-validation runner — it
 executes the rubric on a fixed manifest and records outcomes. The
 manifest is NOT a user-preference list (Commitment 1); see the manifest
 file's `selection_principle` block for the audit trail.
+
+RAG signal policy (P1a 2026-04):
+This runner currently does NOT auto-invoke `extract_rag_signals` for
+each ticker. As a result, `top5_customer_share` and
+`diversification_attempt_signals` are None / 0 in calibration runs,
+and the bottleneck axis routes uniformly to NEED_LLM (the §15 path
+1-B threshold needs top-5 share to fire quantitatively). This is one
+known contributor to the very high recall numbers in earlier ledger
+entries — Stage 2 wasn't gating bottleneck.
+
+Pre-indexing helper: `python scripts/index_universe.py` populates the
+ChromaDB 10-K collection for the manifest's US/US-ADR tickers. Wiring
+the back-validation runner to actually consume RAG signals is the
+P1a-Full / P2-pre-calibration follow-up — once that lands, recall
+metrics in the ledger become meaningful for the first time.
 """
 
 from __future__ import annotations
