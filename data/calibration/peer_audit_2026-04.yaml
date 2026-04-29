@@ -1,0 +1,419 @@
+metadata:
+  audit_date: '2026-04-29'
+  manifest: data/calibration/manifest.yaml
+  peer_limit: 5
+  skipped_markets:
+  - KR
+  skipped_symbols:
+  - SPY
+  tickers_audited: 22
+  tickers_with_suspicious_peers: 5
+  total_suspicious_peer_count: 15
+  rule: peer flagged 'mismatch' when its finnhub_industry differs from focal's, or
+    either is missing — manual review needed to decide if Finnhub's peer list is acceptable
+    for industry_median ROIC computation
+results:
+- symbol: KO
+  focal_industry: Beverages
+  peers:
+  - symbol: PEP
+    industry: Beverages
+    mismatch: false
+  - symbol: MNST
+    industry: Beverages
+    mismatch: false
+  - symbol: KDP
+    industry: Beverages
+    mismatch: false
+  - symbol: COKE
+    industry: Beverages
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: MSFT
+  focal_industry: Technology
+  peers:
+  - symbol: ORCL
+    industry: Technology
+    mismatch: false
+  - symbol: PANW
+    industry: Technology
+    mismatch: false
+  - symbol: CRWD
+    industry: Technology
+    mismatch: false
+  - symbol: NOW
+    industry: Technology
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: V
+  focal_industry: Financial Services
+  peers:
+  - symbol: MA
+    industry: Financial Services
+    mismatch: false
+  - symbol: PYPL
+    industry: Financial Services
+    mismatch: false
+  - symbol: XYZ
+    industry: Financial Services
+    mismatch: false
+  - symbol: FISV
+    industry: Financial Services
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: MCO
+  focal_industry: Financial Services
+  peers:
+  - symbol: SPGI
+    industry: Financial Services
+    mismatch: false
+  - symbol: CME
+    industry: Financial Services
+    mismatch: false
+  - symbol: ICE
+    industry: Financial Services
+    mismatch: false
+  - symbol: COIN.TO
+    industry: null
+    mismatch: true
+  suspicious:
+  - COIN.TO
+  status: 1/4_mismatched
+- symbol: TSM
+  focal_industry: Semiconductors
+  peers:
+  - symbol: 2330.TW
+    industry: null
+    mismatch: true
+  - symbol: 2454.TW
+    industry: null
+    mismatch: true
+  - symbol: 3711.TW
+    industry: null
+    mismatch: true
+  - symbol: 2303.TW
+    industry: null
+    mismatch: true
+  - symbol: 2408.TW
+    industry: null
+    mismatch: true
+  suspicious:
+  - 2330.TW
+  - 2454.TW
+  - 3711.TW
+  - 2303.TW
+  - 2408.TW
+  status: 5/5_mismatched
+- symbol: ASML
+  focal_industry: Semiconductors
+  peers:
+  - symbol: ASML.AS
+    industry: null
+    mismatch: true
+  - symbol: ASM.AS
+    industry: null
+    mismatch: true
+  - symbol: BESI.AS
+    industry: null
+    mismatch: true
+  suspicious:
+  - ASML.AS
+  - ASM.AS
+  - BESI.AS
+  status: 3/3_mismatched
+- symbol: CDNS
+  focal_industry: Technology
+  peers:
+  - symbol: APP
+    industry: Technology
+    mismatch: false
+  - symbol: CRM
+    industry: Technology
+    mismatch: false
+  - symbol: INTU
+    industry: Technology
+    mismatch: false
+  - symbol: ADBE
+    industry: Technology
+    mismatch: false
+  - symbol: SNPS
+    industry: Technology
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: SNPS
+  focal_industry: Technology
+  peers:
+  - symbol: PLTR
+    industry: Technology
+    mismatch: false
+  - symbol: APP
+    industry: Technology
+    mismatch: false
+  - symbol: CRM
+    industry: Technology
+    mismatch: false
+  - symbol: INTU
+    industry: Technology
+    mismatch: false
+  - symbol: ADBE
+    industry: Technology
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: NVDA
+  focal_industry: Semiconductors
+  peers:
+  - symbol: AVGO
+    industry: Semiconductors
+    mismatch: false
+  - symbol: MU
+    industry: Semiconductors
+    mismatch: false
+  - symbol: AMD
+    industry: Semiconductors
+    mismatch: false
+  - symbol: INTC
+    industry: Semiconductors
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: AMZN
+  focal_industry: Retail
+  peers:
+  - symbol: EBAY
+    industry: Retail
+    mismatch: false
+  - symbol: CPNG
+    industry: Retail
+    mismatch: false
+  - symbol: DDS
+    industry: Retail
+    mismatch: false
+  - symbol: ETSY
+    industry: Retail
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: NFLX
+  focal_industry: Media
+  peers:
+  - symbol: DIS
+    industry: Media
+    mismatch: false
+  - symbol: WBD
+    industry: Media
+    mismatch: false
+  - symbol: LYV
+    industry: Media
+    mismatch: false
+  - symbol: TKO
+    industry: Media
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: TSLA
+  focal_industry: Automobiles
+  peers:
+  - symbol: GM
+    industry: Automobiles
+    mismatch: false
+  - symbol: F
+    industry: Automobiles
+    mismatch: false
+  - symbol: RIVN
+    industry: Automobiles
+    mismatch: false
+  - symbol: THO
+    industry: Automobiles
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: T
+  focal_industry: Telecommunication
+  peers:
+  - symbol: VZ
+    industry: Telecommunication
+    mismatch: false
+  - symbol: CMCSA
+    industry: Telecommunication
+    mismatch: false
+  - symbol: UNIT
+    industry: Telecommunication
+    mismatch: false
+  - symbol: GLIBA
+    industry: Telecommunication
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: F
+  focal_industry: Automobiles
+  peers:
+  - symbol: TSLA
+    industry: Automobiles
+    mismatch: false
+  - symbol: GM
+    industry: Automobiles
+    mismatch: false
+  - symbol: RIVN
+    industry: Automobiles
+    mismatch: false
+  - symbol: THO
+    industry: Automobiles
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: INTC
+  focal_industry: Semiconductors
+  peers:
+  - symbol: NVDA
+    industry: Semiconductors
+    mismatch: false
+  - symbol: AVGO
+    industry: Semiconductors
+    mismatch: false
+  - symbol: MU
+    industry: Semiconductors
+    mismatch: false
+  - symbol: AMD
+    industry: Semiconductors
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: GE
+  focal_industry: Aerospace & Defense
+  peers:
+  - symbol: RTX
+    industry: Aerospace & Defense
+    mismatch: false
+  - symbol: LMT.TO
+    industry: null
+    mismatch: true
+  - symbol: BA
+    industry: Aerospace & Defense
+    mismatch: false
+  - symbol: LMT
+    industry: Aerospace & Defense
+    mismatch: false
+  suspicious:
+  - LMT.TO
+  status: 1/4_mismatched
+- symbol: BRK-B
+  focal_industry: Financial Services
+  peers:
+  - symbol: BRK.A
+    industry: Financial Services
+    mismatch: false
+  - symbol: CODI
+    industry: Financial Services
+    mismatch: false
+  - symbol: CNNE
+    industry: Financial Services
+    mismatch: false
+  - symbol: RAFI
+    industry: Financial Services
+    mismatch: false
+  - symbol: QEDN
+    industry: Financial Services
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: GOOG
+  focal_industry: Media
+  peers:
+  - symbol: GOOGL
+    industry: Media
+    mismatch: false
+  - symbol: META
+    industry: Media
+    mismatch: false
+  - symbol: RDDT
+    industry: Media
+    mismatch: false
+  - symbol: PINS
+    industry: Media
+    mismatch: false
+  - symbol: SNAP
+    industry: Media
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: COST
+  focal_industry: Retail
+  peers:
+  - symbol: WMT
+    industry: Retail
+    mismatch: false
+  - symbol: TGT
+    industry: Retail
+    mismatch: false
+  - symbol: DG
+    industry: Retail
+    mismatch: false
+  - symbol: DLTR
+    industry: Retail
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: HD
+  focal_industry: Retail
+  peers:
+  - symbol: LOW
+    industry: Retail
+    mismatch: false
+  - symbol: FND
+    industry: Retail
+    mismatch: false
+  - symbol: TTSH
+    industry: Retail
+    mismatch: false
+  - symbol: GRWG
+    industry: Retail
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: LLY
+  focal_industry: Pharmaceuticals
+  peers:
+  - symbol: JNJ
+    industry: Pharmaceuticals
+    mismatch: false
+  - symbol: MRK
+    industry: Pharmaceuticals
+    mismatch: false
+  - symbol: PFE
+    industry: Pharmaceuticals
+    mismatch: false
+  - symbol: BMY
+    industry: Pharmaceuticals
+    mismatch: false
+  suspicious: []
+  status: ok
+- symbol: NVO
+  focal_industry: Pharmaceuticals
+  peers:
+  - symbol: NOVO B.CO
+    industry: null
+    mismatch: true
+  - symbol: ALK B.CO
+    industry: null
+    mismatch: true
+  - symbol: HLUN A.CO
+    industry: null
+    mismatch: true
+  - symbol: PEG.CO
+    industry: null
+    mismatch: true
+  - symbol: STENO.CO
+    industry: null
+    mismatch: true
+  suspicious:
+  - NOVO B.CO
+  - ALK B.CO
+  - HLUN A.CO
+  - PEG.CO
+  - STENO.CO
+  status: 5/5_mismatched

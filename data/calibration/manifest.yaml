@@ -29,6 +29,12 @@ tickers:
   - { symbol: KO,    market: US,     rationale: "Beverages — long-cited brand-moat exemplar; ROIC advantage detection" }
   - { symbol: MSFT,  market: US,     rationale: "Software platforms — switching-cost moat; stable ROIC" }
   - { symbol: V,     market: US,     rationale: "Payment networks — two-sided network moat" }
+  # Peer audit (P0b 2026-04): Finnhub returns 4 peers (SPGI, CME, ICE,
+  # COIN.TO). COIN.TO (Coinbase Toronto cross-listing) is a category-
+  # mismatched peer (crypto exchange vs credit ratings) but is naturally
+  # filtered by the data layer — Toronto cross-listings don't appear in
+  # SEC financials-reported, so peer_aggregator drops it. Effective
+  # peer pool size is 3 instead of 5 (median is statistically weaker).
   - { symbol: MCO,   market: US,     rationale: "Credit ratings — regulatory + reputation moat" }
 
   # --- Bottleneck axis exemplars (process bottlenecks) ---
@@ -40,6 +46,14 @@ tickers:
   # alternate fundamentals source is wired (EDGAR 20-F parser or
   # paid-tier provider), back-validation effectively excludes them.
   # They stay in the manifest as a coverage-gap reminder.
+  #
+  # Peer audit (P0b 2026-04): Finnhub /stock/peers returns home-listing
+  # primary tickers for these ADRs (TSM → 5× .TW, ASML → 3× .AS) which
+  # Finnhub indexes neither in /stock/profile2.finnhubIndustry nor in
+  # financials-reported. Net effect: peer set has 0 usable peers →
+  # industry_median ROIC = None → moat axis routes to NEED_LLM. Same
+  # data source (EDGAR 20-F or paid tier) would unlock both focal and
+  # peer-set financials.
   - { symbol: TSM,   market: US-ADR, rationale: "Leading-edge fab process — technical bottleneck pure-play (NOTE: Finnhub financials-reported coverage gap, see manifest header)" }
   - { symbol: ASML,  market: US-ADR, rationale: "EUV lithography monopoly — technical bottleneck (NOTE: same coverage gap as TSM)" }
   - { symbol: CDNS,  market: US,     rationale: "EDA tools duopoly — technical bottleneck" }
@@ -55,6 +69,10 @@ tickers:
   - { symbol: T,     market: US,     rationale: "Telecom — capital-intensive, eroding moat; negative control" }
   - { symbol: F,     market: US,     rationale: "Auto OEM — historically thin ROIC; negative control" }
   - { symbol: INTC,  market: US,     rationale: "Process leadership lost mid-2010s; negative control on bottleneck axis" }
+  # Peer audit (P0b 2026-04): Finnhub returns 4 peers (RTX, BA, LMT,
+  # LMT.TO). LMT.TO (Lockheed Martin Toronto cross-listing) is the same
+  # company as LMT, redundant; naturally filtered by the data layer.
+  # Effective peer pool size is 3.
   - { symbol: GE,    market: US,     rationale: "Conglomerate restructuring — §13 multi-segment edge case" }
 
   # --- Conglomerate / multi-segment edge cases (§13 30% rule) ---
@@ -70,6 +88,12 @@ tickers:
   - { symbol: COST,  market: US,     rationale: "Membership retail — low GM but stable; persistence test" }
   - { symbol: HD,    market: US,     rationale: "Big-box retail — domestic moat test" }
   - { symbol: LLY,   market: US,     rationale: "Pharma — patent moat with finite life; trend test" }
+  # Peer audit (P0b 2026-04): Same ADR pattern as TSM/ASML — Finnhub
+  # returns 5× .CO peers (Copenhagen home listings: NOVO B.CO, ALK B.CO,
+  # HLUN A.CO, PEG.CO, STENO.CO), all unindexed for industry +
+  # financials. Effective peer pool: 0. industry_median ROIC = None →
+  # moat axis NEED_LLM. Same coverage gap as TSM/ASML; resolves with
+  # EDGAR 20-F parser or paid-tier source.
   - { symbol: NVO,   market: US-ADR, rationale: "Pharma — Ozempic franchise; new-frontier expansion" }
 
   # --- Korean tickers (KOSPI representative names) ---

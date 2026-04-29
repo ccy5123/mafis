@@ -30,6 +30,8 @@ env/
 !/data/calibration/
 /data/calibration/*
 !/data/calibration/manifest.yaml
+# peer audit snapshots are evidence for manifest comments — track them.
+!/data/calibration/peer_audit_*.yaml
 chroma_db/
 *.sqlite
 *.sqlite3
