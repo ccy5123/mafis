@@ -32,6 +32,13 @@ env/
 !/data/calibration/manifest.yaml
 # peer audit snapshots are evidence for manifest comments — track them.
 !/data/calibration/peer_audit_*.yaml
+# Calibration baselines (curated ledger snapshots) are tracked so cross-
+# revision comparisons survive a clean clone. Per-run ledger output
+# under /data/calibration_ledger/ stays untracked.
+!/data/calibration_baselines/
+/data/calibration_baselines/*
+!/data/calibration_baselines/*.json
+!/data/calibration_baselines/*.md
 chroma_db/
 *.sqlite
 *.sqlite3

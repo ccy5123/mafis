@@ -21,25 +21,33 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-OLD = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T005948Z.json"
-NEW = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T011543Z.json"
+OLD = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T020830Z.json"  # v4 (post-P3-3)
+NEW = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T052705Z.json"  # v5 (LLM-enabled)
 
 
 def _confusion(records: list[dict]) -> dict:
+    """Confusion matrix using FINAL decision: Stage 3 if present, else Stage 2.
+    A ledger run with --with-stage3 is judged by Stage 3's verdict;
+    a Stage-2-only run is judged by Stage 2's hierarchy gate."""
     tp = fp = tn = fn = 0
     rejected_no_outcome = 0
     advanced_no_outcome = 0
     for r in records:
-        decision = r.get("prefilter", {}).get("hierarchy_decision")
+        s3 = r.get("stage3")
+        if s3 is not None:
+            decision = s3.get("hierarchy_decision")
+            advanced = decision == "ADVANCE_TO_STAGE_4"
+        else:
+            decision = r.get("prefilter", {}).get("hierarchy_decision")
+            advanced = decision == "ADVANCE_TO_STAGE_3"
         excess = r.get("return_outcome", {}).get("excess_return")
         if excess is None:
-            if decision == "ADVANCE_TO_STAGE_3":
+            if advanced:
                 advanced_no_outcome += 1
             else:
                 rejected_no_outcome += 1
             continue
         outperformed = excess >= 0
-        advanced = decision == "ADVANCE_TO_STAGE_3"
         if advanced and outperformed:
             tp += 1
         elif advanced and not outperformed:
