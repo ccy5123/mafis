@@ -185,6 +185,51 @@ def fetch_live_fundamentals_kr(
 # ---------------------------------------------------------------------------
 
 
+def fetch_historical_fundamentals_kr(
+    symbol: str,
+    as_of_date: dt.date,
+    *,
+    client: DartLikeClient | None = None,
+    history_years: int = DEFAULT_HISTORY_YEARS,
+    industry_aggregates: Any = None,
+    effective_tax_rate: float = DEFAULT_EFFECTIVE_TAX_RATE_KR,
+) -> TickerFundamentals:
+    """Historical Korean fundamentals at a point-in-time `as_of_date`.
+
+    Wrapper around `fetch_live_fundamentals_kr` that synthesizes a
+    "today" date so the live adapter's history-window logic resolves
+    to filings publicly available on `as_of_date`.
+
+    Korean 사업보고서 (annual) is filed within ~3 months of fiscal
+    year-end. Quarterly reports take ~45 days. The conservative
+    rule used here:
+
+      most_recent_safe_fy = as_of_date.year - 1
+
+    so a calibration_date of 2018-06-30 yields fy=2017 as the latest
+    fully-disclosed annual. The adapter's quarterly window
+    (most_recent_fy − 2 .. most_recent_fy) then covers 2015-2017.
+
+    `industry_aggregates` is accepted for API symmetry with the US
+    historical adapter but currently ignored — peer aggregation isn't
+    wired for KR (no DART /peers endpoint and Finnhub returns 403 on
+    KRX symbols).
+    """
+    most_recent_safe_fy = as_of_date.year - 1
+    # Pick a synthetic mid-year date in the year *after* the safe fy
+    # so the live adapter's `most_recent_fy = today.year - 1` resolves
+    # to most_recent_safe_fy.
+    fake_today = dt.date(most_recent_safe_fy + 1, 6, 1)
+    return fetch_live_fundamentals_kr(
+        symbol,
+        client=client,
+        history_years=history_years,
+        industry_aggregates=industry_aggregates,
+        effective_tax_rate=effective_tax_rate,
+        today=fake_today,
+    )
+
+
 def _normalize_kr_symbol(symbol: str) -> str:
     """Normalize a Korean ticker to the 6-digit DART stock code.
 
@@ -475,6 +520,7 @@ __all__ = [
     "DEFAULT_EFFECTIVE_TAX_RATE_KR",
     "DEFAULT_HISTORY_YEARS",
     "DartLikeClient",
+    "fetch_historical_fundamentals_kr",
     "fetch_live_fundamentals_kr",
     "is_korean_symbol",
 ]

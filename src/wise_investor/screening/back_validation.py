@@ -344,14 +344,34 @@ def back_validate_ticker(
         calibration_date.day,
     )
 
+    # KR symbols skip peer aggregation — Finnhub /stock/peers returns
+    # 403 on KRX tickers. (Even if it didn't, peer ROIC computation
+    # would still fail for KR peers because /stock/financials-reported
+    # is also 403 on the same tickers — see _fetch_for_source's KR
+    # dispatcher branch.)
+    from wise_investor.screening.live_adapter_kr import is_korean_symbol
     industry_aggregates = None
-    if with_industry_aggregates and source == "finnhub" and fetcher is None:
+    if (
+        with_industry_aggregates
+        and source == "finnhub"
+        and fetcher is None
+        and not is_korean_symbol(symbol)
+    ):
         industry_aggregates = _fetch_industry_aggregates_at(
             symbol, calibration_date,
         )
 
+    # KR also skips RAG enrichment — DART filings aren't indexed in the
+    # ChromaDB collection (different structure, see rag_signals.py
+    # docstring). top5_customer_share/diversification_attempt_signals
+    # stay at the default None/0 for KR tickers, exactly as before P1a.
     rag_signals_obj: Any = None
-    if with_rag_signals and source == "finnhub" and fetcher is None:
+    if (
+        with_rag_signals
+        and source == "finnhub"
+        and fetcher is None
+        and not is_korean_symbol(symbol)
+    ):
         try:
             from wise_investor.screening.rag_signals import extract_rag_signals
             rag_signals_obj = extract_rag_signals(symbol)
@@ -534,6 +554,22 @@ def _fetch_for_source(
     history.
     """
     if source == "finnhub" and fetcher is None:
+        # P3-1 (2026-04): KR symbols dispatch to the DART historical
+        # adapter — Finnhub /stock/financials-reported returns 403 for
+        # KRX tickers. The historical KR wrapper synthesizes a
+        # `today` so the live adapter's history window aligns with
+        # `as_of_date`. Peer aggregation isn't wired for KR yet, so
+        # `industry_aggregates` is silently dropped on this path
+        # (matches the US historical adapter for yfinance source).
+        from wise_investor.screening.live_adapter_kr import (
+            fetch_historical_fundamentals_kr,
+            is_korean_symbol,
+        )
+        if is_korean_symbol(symbol):
+            return fetch_historical_fundamentals_kr(
+                symbol, as_of_date,
+                industry_aggregates=industry_aggregates,
+            )
         from wise_investor.screening.historical_adapter_finnhub import (
             fetch_historical_fundamentals_finnhub,
         )

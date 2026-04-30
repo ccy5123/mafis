@@ -29,6 +29,7 @@ from wise_investor.screening.live_adapter import (
 from wise_investor.screening.live_adapter_kr import (
     DEFAULT_EFFECTIVE_TAX_RATE_KR,
     _normalize_kr_symbol,
+    fetch_historical_fundamentals_kr,
     fetch_live_fundamentals_kr,
     is_korean_symbol,
 )
@@ -571,6 +572,41 @@ def test_quarterly_margins_drop_on_zero_revenue() -> None:
     assert "2023Q1" in qm_ids
     assert "2023Q3" in qm_ids
     assert "2023Q4" in qm_ids
+
+
+# ---------------------------------------------------------------------------
+# P3-1 (2026-04): historical wrapper for back-validation use
+# ---------------------------------------------------------------------------
+
+
+def test_historical_kr_resolves_safe_fy_for_calibration_date() -> None:
+    """For calibration_date=2018-06-30, the safe most-recent FY is 2017
+    (KR annual filings publish Mar-of-FY+1). The wrapper synthesizes a
+    `today` so the live adapter's history window aligns."""
+    client = _StubDartClient()
+    funds = fetch_historical_fundamentals_kr(
+        "005930.KS",
+        as_of_date=dt.date(2018, 6, 30),
+        client=client,
+        history_years=3,
+    )
+    fiscal_years = [a.fiscal_year for a in funds.annual]
+    assert fiscal_years == [2015, 2016, 2017]
+
+
+def test_historical_kr_uses_dart_path_not_finnhub() -> None:
+    """The wrapper must dispatch to the DART client (not throw or hit
+    network). The stub records every financials() call — verifies the
+    KR adapter actually ran."""
+    client = _StubDartClient()
+    fetch_historical_fundamentals_kr(
+        "000660.KS",
+        as_of_date=dt.date(2018, 6, 30),
+        client=client,
+        history_years=2,
+    )
+    assert any(c[0] == "financials" for c in client.calls)
+    assert any(c[0] == "corp_code" for c in client.calls)
 
 
 def test_universe_dispatches_per_symbol() -> None:
