@@ -21,8 +21,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-OLD = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260429T011825Z.json"
-NEW = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T005948Z.json"
+OLD = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T005948Z.json"
+NEW = REPO_ROOT / "data/calibration_ledger/v2.0_2018-06-30_20260430T011543Z.json"
 
 
 def _confusion(records: list[dict]) -> dict:
