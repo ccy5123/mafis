@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from wise_investor.data.finnhub import (
     FinancialLineItem,
     FinancialReport,
@@ -134,3 +136,43 @@ def test_total_debt_sums_long_and_short_post_fix() -> None:
         ),
     ])
     assert total_debt(entry) == 1_559_000_000 + 24_267_000_000
+
+
+# ---------------------------------------------------------------------------
+# P3-3 (2026-04): tolerant numeric coercion for noisy Finnhub responses
+# ---------------------------------------------------------------------------
+
+
+def test_value_validator_accepts_plain_number() -> None:
+    """Numeric values pass through unchanged (regression for the legacy
+    sentinel-only validator)."""
+    li = FinancialLineItem(concept="us-gaap_Revenues", value=1_234_567.0)
+    assert li.value == pytest.approx(1_234_567.0)
+
+
+def test_value_validator_coerces_legacy_sentinels_to_none() -> None:
+    """The original validator behavior — sentinel strings → None."""
+    for sentinel in ("", "-", "—", "N/A", "NA", "null", "none"):
+        li = FinancialLineItem(concept="us-gaap_X", value=sentinel)
+        assert li.value is None, f"sentinel {sentinel!r} should become None"
+
+
+def test_value_validator_parses_comma_formatted_string() -> None:
+    """Finnhub occasionally returns '1,234,000' — parse, don't reject."""
+    li = FinancialLineItem(concept="us-gaap_X", value="1,234,000")
+    assert li.value == pytest.approx(1_234_000.0)
+
+
+def test_value_validator_treats_html_noise_as_missing() -> None:
+    """The CDNS/F failure mode — HTML body fragments leaking into a
+    numeric field. Must not raise; returns None so the rest of the
+    response stays parseable."""
+    html_noise = '<!--DOCTYPE html PUBLIC ...reak End -->\n   </div>'
+    li = FinancialLineItem(concept="us-gaap_X", value=html_noise)
+    assert li.value is None
+
+
+def test_value_validator_treats_arbitrary_prose_as_missing() -> None:
+    """Defense in depth: any non-numeric string should land as None."""
+    li = FinancialLineItem(concept="us-gaap_X", value="see footnote 7")
+    assert li.value is None

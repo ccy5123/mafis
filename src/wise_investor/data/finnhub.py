@@ -192,17 +192,35 @@ class FinancialLineItem(_Model):
     value: float | None = None
 
     # Finnhub occasionally returns 'N/A' (or '-', '') in `value` for
-    # filings where a particular XBRL concept wasn't reported. The plain
-    # `float | None` annotation rejects these as a parse error and the
-    # whole FinancialsResponse fails validation — which used to take
-    # down our quarterly fetch entirely. Coerce common sentinels to None
-    # so a single bad concept doesn't poison the whole response.
+    # filings where a particular XBRL concept wasn't reported. Even
+    # worse (P3-3 2026-04 — caught on CDNS/F calibration runs), the
+    # endpoint sometimes returns HTML body fragments where a numeric
+    # field belongs ("<!--DOCTYPE html PUBLIC ...", "<div class=...").
+    # The plain `float | None` annotation rejects either case as a
+    # parse error and the whole FinancialsResponse fails validation —
+    # which used to take down quarterly fetches and CDNS/F annual
+    # entries entirely.
+    #
+    # Strategy: try numeric coercion first (with comma stripping for
+    # the "1,234,000" formatting Finnhub sometimes uses), and if that
+    # fails return None. Sentinel checks short-circuit common cases
+    # without raising. The legacy fallback for already-numeric values
+    # (int/float) is preserved.
     @field_validator("value", mode="before")
     @classmethod
     def _coerce_missing_to_none(cls, v: object) -> object:
+        if v is None or isinstance(v, (int, float)):
+            return v
         if isinstance(v, str):
-            stripped = v.strip().upper()
-            if stripped in {"", "-", "—", "N/A", "NA", "NULL", "NONE"}:
+            stripped = v.strip()
+            if stripped.upper() in {"", "-", "—", "N/A", "NA", "NULL", "NONE"}:
+                return None
+            try:
+                return float(stripped.replace(",", ""))
+            except ValueError:
+                # Non-numeric string (HTML noise, prose, etc.) —
+                # treat as missing to keep the rest of the response
+                # parseable.
                 return None
         return v
 
