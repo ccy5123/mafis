@@ -184,9 +184,12 @@ def test_kr_pulls_history_years_of_filings() -> None:
         today=dt.date(2024, 6, 1),
     )
     # today=2024-06 → most_recent_fy = 2023, history = 2021..2023
-    fetched_years = sorted(
+    # P1c (2026-04): each fiscal year now triggers up to 4 reprt_code
+    # fetches (annual + 3 quarterly cumulatives). Verify the *distinct*
+    # years touched, not the raw call count.
+    fetched_years = sorted({
         c[2] for c in client.calls if c[0] == "financials"
-    )
+    })
     assert fetched_years == [2021, 2022, 2023]
 
 
@@ -330,15 +333,25 @@ def test_kr_industry_classification_is_static_dart_string() -> None:
     assert funds.industry_classification == "Korean Equity (DART)"
 
 
-def test_kr_quarterly_margins_empty_in_v1() -> None:
-    """KR quarterly logic is deferred — the adapter is explicit about
-    that rather than producing partial / wrong data."""
+def test_kr_quarterly_margins_recovered_from_dart_cumulatives() -> None:
+    """P1c (2026-04): quarterly margins are no longer empty.
+
+    With the default stub returning the same payload for every reprt_code,
+    Q1 standalone equals the cumulative value while Q2/Q3/Q4 standalones
+    subtract to zero (degenerate but mathematically correct for this
+    stub). The first non-degenerate quarter is recovered as a sanity
+    check that the helper actually runs.
+    """
     client = _StubDartClient()
     funds = fetch_live_fundamentals_kr(
         "005930.KS", client=client, history_years=1,
         today=dt.date(2024, 6, 1),
     )
-    assert funds.quarterly_margins == ()
+    assert len(funds.quarterly_margins) >= 1
+    # Q1 of the most-recent FY surfaces with a real GM; subsequent
+    # quarters drop because Δ-revenue is 0 in this stub.
+    assert funds.quarterly_margins[0].quarter_id == "2023Q1"
+    assert 0.0 < funds.quarterly_margins[0].gross_margin <= 1.0
 
 
 def test_kr_top5_and_diversification_default_to_none_zero() -> None:
@@ -405,6 +418,159 @@ def test_dispatcher_routes_us_symbol_to_finnhub() -> None:
     assert funds.symbol == "NVDA"
     # Called annual + quarterly = 2
     assert finnhub.financials_calls == 2
+
+
+# ---------------------------------------------------------------------------
+# P1c (2026-04): quarterly margin reconstruction from DART cumulatives
+# ---------------------------------------------------------------------------
+
+
+def _quarterly_response(*, revenue: float | None, gross_profit: float | None) -> FinancialsResponse:
+    """Build a DART response with just (revenue, gross_profit) — the
+    minimum fields the quarterly helper extracts.
+    """
+    rows = []
+    if revenue is not None:
+        rows.append(_row(account_id="ifrs-full_Revenue", sj_div="IS", amount=revenue))
+    if gross_profit is not None:
+        rows.append(_row(account_id="ifrs-full_GrossProfit", sj_div="IS", amount=gross_profit))
+    # Stub still needs to satisfy annual extraction when `reprt_code=11011`
+    # is queried; supply a minimal annual surface too.
+    rows.append(_row(account_id="dart_OperatingIncomeLoss", sj_div="IS", amount=10.0))
+    rows.append(_row(account_id="ifrs-full_Equity", sj_div="BS", amount=100.0))
+    rows.append(_row(account_id="ifrs-full_CashAndCashEquivalents", sj_div="BS", amount=10.0))
+    return FinancialsResponse(status="000", message="정상", list=rows)
+
+
+class _CumulativeStubClient(_StubDartClient):
+    """DART stub that returns DIFFERENT payloads per `reprt_code`.
+
+    `cumulatives_by_year_code` keys are (fiscal_year, reprt_code). Lets
+    a test inject a realistic cumulative-to-date pattern and verify the
+    standalone quarter values come out correctly via subtraction.
+    """
+
+    def __init__(
+        self,
+        *,
+        cumulatives_by_year_code: dict[tuple[int, str], FinancialsResponse],
+    ) -> None:
+        super().__init__()
+        self._cumulatives = cumulatives_by_year_code
+
+    def financials(self, corp_code: str, year, reprt_code: str = "11011", fs_div: str = "CFS"):
+        self.calls.append(("financials", corp_code, year, reprt_code))
+        return self._cumulatives.get((year, reprt_code), _samsung_like_response())
+
+
+def test_quarterly_margins_subtract_dart_cumulatives_correctly() -> None:
+    """Verify Q-standalone = cumulative_to_date − previous_cumulative.
+
+    Pattern (one fiscal year):
+      Q1   rev=100  gp=40    → standalone Q1: 100/40,  GM=0.40
+      H1   rev=240  gp=80    → standalone Q2: 140/40,  GM=0.286
+      9M   rev=380  gp=130   → standalone Q3: 140/50,  GM=0.357
+      FY   rev=540  gp=170   → standalone Q4: 160/40,  GM=0.250
+    """
+    fy = 2023
+    cumulatives = {
+        (fy, "11013"): _quarterly_response(revenue=100, gross_profit=40),
+        (fy, "11012"): _quarterly_response(revenue=240, gross_profit=80),
+        (fy, "11014"): _quarterly_response(revenue=380, gross_profit=130),
+        (fy, "11011"): _quarterly_response(revenue=540, gross_profit=170),
+    }
+    client = _CumulativeStubClient(cumulatives_by_year_code=cumulatives)
+    funds = fetch_live_fundamentals_kr(
+        "005930.KS", client=client, history_years=1,
+        today=dt.date(2024, 6, 1),
+    )
+
+    qm_by_id = {q.quarter_id: q.gross_margin for q in funds.quarterly_margins}
+    assert "2023Q1" in qm_by_id
+    assert "2023Q2" in qm_by_id
+    assert "2023Q3" in qm_by_id
+    assert "2023Q4" in qm_by_id
+    assert qm_by_id["2023Q1"] == pytest.approx(0.40, abs=1e-6)
+    assert qm_by_id["2023Q2"] == pytest.approx(40 / 140, abs=1e-6)
+    assert qm_by_id["2023Q3"] == pytest.approx(50 / 140, abs=1e-6)
+    assert qm_by_id["2023Q4"] == pytest.approx(40 / 160, abs=1e-6)
+
+
+def test_quarterly_margins_skip_missing_quarter() -> None:
+    """If a single reprt_code is absent (e.g., DART filing not posted yet),
+    only the affected quarter drops; the others survive."""
+    fy = 2023
+    # Skip the 9M (REPORT_Q3 = 11014) cumulative — Q3 (subtraction) and
+    # Q4 (depends on 9M) should both be missing; Q1 and Q2 still surface.
+    cumulatives = {
+        (fy, "11013"): _quarterly_response(revenue=100, gross_profit=40),
+        (fy, "11012"): _quarterly_response(revenue=240, gross_profit=80),
+        # Intentionally omit (fy, "11014")
+        (fy, "11011"): _quarterly_response(revenue=540, gross_profit=170),
+    }
+
+    class _MissingQ3Client(_CumulativeStubClient):
+        def financials(self, corp_code: str, year, reprt_code: str = "11011", fs_div: str = "CFS"):
+            self.calls.append(("financials", corp_code, year, reprt_code))
+            if (year, reprt_code) == (fy, "11014"):
+                # Simulate DART returning status != "000"
+                return FinancialsResponse(status="013", message="조회된 데이타가 없습니다", list=[])
+            return self._cumulatives.get((year, reprt_code), _samsung_like_response())
+
+    client = _MissingQ3Client(cumulatives_by_year_code=cumulatives)
+    funds = fetch_live_fundamentals_kr(
+        "005930.KS", client=client, history_years=1,
+        today=dt.date(2024, 6, 1),
+    )
+    qm_ids = {q.quarter_id for q in funds.quarterly_margins}
+    assert "2023Q1" in qm_ids
+    assert "2023Q2" in qm_ids
+    assert "2023Q3" not in qm_ids
+    assert "2023Q4" not in qm_ids
+
+
+def test_quarterly_margins_capped_at_12() -> None:
+    """A 5-year window that yields >12 quarters trims to the most recent 12."""
+    cumulatives: dict[tuple[int, str], FinancialsResponse] = {}
+    for fy in range(2019, 2024):  # 5 years × 4 quarters = 20 potential quarters
+        cumulatives[(fy, "11013")] = _quarterly_response(revenue=100, gross_profit=40)
+        cumulatives[(fy, "11012")] = _quarterly_response(revenue=210, gross_profit=80)
+        cumulatives[(fy, "11014")] = _quarterly_response(revenue=320, gross_profit=120)
+        cumulatives[(fy, "11011")] = _quarterly_response(revenue=440, gross_profit=160)
+    client = _CumulativeStubClient(cumulatives_by_year_code=cumulatives)
+    funds = fetch_live_fundamentals_kr(
+        "005930.KS", client=client, history_years=5,
+        today=dt.date(2024, 6, 1),
+    )
+    # quarterly_window in adapter is `most_recent_fy − 2 .. most_recent_fy`
+    # = 2021..2023 = 12 quarters max.
+    assert len(funds.quarterly_margins) <= 12
+    # Most recent should be 2023Q4
+    assert funds.quarterly_margins[-1].quarter_id == "2023Q4"
+
+
+def test_quarterly_margins_drop_on_zero_revenue() -> None:
+    """A quarter where standalone revenue resolves to zero (e.g., the
+    cumulative didn't move) is silently dropped — don't divide by zero."""
+    fy = 2023
+    cumulatives = {
+        (fy, "11013"): _quarterly_response(revenue=100, gross_profit=40),
+        # H1 same as Q1 → Q2 standalone revenue = 0 → must drop
+        (fy, "11012"): _quarterly_response(revenue=100, gross_profit=40),
+        (fy, "11014"): _quarterly_response(revenue=250, gross_profit=90),
+        (fy, "11011"): _quarterly_response(revenue=400, gross_profit=140),
+    }
+    client = _CumulativeStubClient(cumulatives_by_year_code=cumulatives)
+    funds = fetch_live_fundamentals_kr(
+        "005930.KS", client=client, history_years=1,
+        today=dt.date(2024, 6, 1),
+    )
+    qm_ids = {q.quarter_id for q in funds.quarterly_margins}
+    assert "2023Q2" not in qm_ids  # standalone rev = 0
+    # Q1, Q3, Q4 all valid
+    assert "2023Q1" in qm_ids
+    assert "2023Q3" in qm_ids
+    assert "2023Q4" in qm_ids
 
 
 def test_universe_dispatches_per_symbol() -> None:

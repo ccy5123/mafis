@@ -25,12 +25,12 @@ responsibility — the prefilter compares ratios (ROIC, gross margin),
 not absolute amounts, so KRW vs USD doesn't affect the verdict.
 
 Limitations (called out per Commitment 3):
-  - Quarterly margins are deferred. DART's per-quarter `reprt_code`
-    11013/11014 returns cumulative-to-date amounts, not per-quarter
-    deltas; building a clean quarterly_margins tuple requires
-    additional subtraction logic. Until that lands, KR tickers run
-    Stage 2 with empty quarterly margins (the gross_margin_3y_std proxy
-    becomes None → moat axis routes through NEED_LLM, not PASS).
+  - Quarterly margins were deferred until P1c (2026-04). DART's per-
+    quarter `reprt_code` (11013, 11012, 11014) returns cumulative-to-
+    date amounts; the standalone quarter values are recovered by
+    subtraction (see `_build_quarterly_margins_from_dart`). Korean
+    moat axis evaluation now matches the US adapter's quarterly_margins
+    contract.
   - Industry classification is a static "Korean Equity (DART)" string;
     DART doesn't expose GICS sub-industries.
   - Segments default to single-segment; DART has segment disclosures
@@ -47,6 +47,7 @@ from typing import Any, Protocol
 from wise_investor.screening.segments import single_segment_default
 from wise_investor.screening.types import (
     AnnualFinancials,
+    QuarterlyMargin,
     TickerFundamentals,
 )
 
@@ -146,6 +147,16 @@ def fetch_live_fundamentals_kr(
     annual.sort(key=lambda a: a.fiscal_year)
     annual_t = tuple(annual)
 
+    # P1c (2026-04): quarterly margins from DART cumulative subtraction.
+    # We need 12 quarters (3 years × 4) for the moat-axis GM std proxy.
+    # Limit the lookup window to the most recent 3 fiscal years to keep
+    # API call count bounded (3 × 3 = 9 extra calls per ticker; 11011
+    # is already fetched above).
+    quarterly_window = list(range(max(earliest_fy, most_recent_fy - 2), most_recent_fy + 1))
+    quarterly_margins = _build_quarterly_margins_from_dart(
+        client, corp_code, quarterly_window,
+    )
+
     latest_fy = annual_t[-1].fiscal_year if annual_t else 0
     segments_history = (single_segment_default(symbol.upper(), fiscal_year=latest_fy),)
 
@@ -160,7 +171,7 @@ def fetch_live_fundamentals_kr(
         symbol=symbol.upper(),
         industry_classification="Korean Equity (DART)",
         annual=annual_t,
-        quarterly_margins=(),  # deferred — see module docstring
+        quarterly_margins=quarterly_margins,
         segments_history=segments_history,
         top5_customer_share=None,
         diversification_attempt_signals=0,
@@ -247,6 +258,120 @@ _ACCOUNT_CANDIDATES: dict[str, dict[str, list[str] | tuple[str, ...]]] = {
         "sj_divs": ("BS",),
     },
 }
+
+
+def _build_quarterly_margins_from_dart(
+    client: DartLikeClient,
+    corp_code: str,
+    years: list[int],
+) -> tuple[QuarterlyMargin, ...]:
+    """Recover per-quarter standalone gross margin from DART cumulatives.
+
+    DART exposes four `reprt_code` values that all carry cumulative-to-
+    date numbers:
+
+      11013 (1분기) = Q1 standalone (already a single-quarter view)
+      11012 (반기) = H1 cumulative = Q1 + Q2
+      11014 (3분기) = 9M cumulative = Q1 + Q2 + Q3
+      11011 (사업)  = FY cumulative = Q1 + Q2 + Q3 + Q4
+
+    Standalone quarter values are reconstructed by subtraction:
+
+      Q1 = 11013
+      Q2 = 11012 − 11013
+      Q3 = 11014 − 11012
+      Q4 = 11011 − 11014
+
+    Each (revenue, gross_profit) pair where both inputs are present and
+    revenue > 0 contributes one `QuarterlyMargin`. Quarters with any
+    missing input are silently dropped (Commitment 3: surface absence,
+    don't fabricate). The result is capped at the last 12 quarters so
+    callers can compute a 3-year std without further trimming.
+
+    API cost (per ticker): up to 3 extra DART calls per fiscal year in
+    `years` (11013/11012/11014; 11011 is already fetched by
+    `fetch_live_fundamentals_kr`). With a 3-year window this adds 9
+    calls per ticker — well under the free-tier 10k/day budget.
+    """
+    from wise_investor.data.dart import (
+        REPORT_ANNUAL,
+        REPORT_H1,
+        REPORT_Q1,
+        REPORT_Q3,
+    )
+
+    # Each entry stores the cumulative (revenue, gross_profit) for one
+    # reprt_code. None when the fetch failed or the report wasn't filed.
+    Pair = tuple[float | None, float | None]
+
+    def _diff(later: Pair, earlier: Pair) -> Pair:
+        """Subtract two cumulative (rev, gp) pairs. Either input None
+        means the standalone quarter is unrecoverable."""
+        if (
+            later[0] is None
+            or earlier[0] is None
+            or later[1] is None
+            or earlier[1] is None
+        ):
+            return (None, None)
+        return (later[0] - earlier[0], later[1] - earlier[1])
+
+    out: list[QuarterlyMargin] = []
+    for year in sorted(years):
+        cumulatives: dict[str, Pair] = {}
+        for code, label in (
+            (REPORT_Q1, "Q1"),
+            (REPORT_H1, "H1"),
+            (REPORT_Q3, "9M"),
+            (REPORT_ANNUAL, "FY"),
+        ):
+            try:
+                resp = client.financials(
+                    corp_code, year=year, reprt_code=code,
+                )
+            except Exception as e:
+                logger.debug(
+                    "DART quarterly fetch failed for %s/%s/%s: %s",
+                    corp_code, year, code, e,
+                )
+                cumulatives[label] = (None, None)
+                continue
+            if not getattr(resp, "ok", True):
+                cumulatives[label] = (None, None)
+                continue
+            cumulatives[label] = (
+                _extract(resp, "revenue"),
+                _extract(resp, "gross_profit"),
+            )
+
+        # Rebuild standalone quarters in chronological order so the
+        # final tuple is also chronological.
+        q1: Pair = cumulatives.get("Q1", (None, None))
+        q2: Pair = _diff(
+            cumulatives.get("H1", (None, None)),
+            cumulatives.get("Q1", (None, None)),
+        )
+        q3: Pair = _diff(
+            cumulatives.get("9M", (None, None)),
+            cumulatives.get("H1", (None, None)),
+        )
+        q4: Pair = _diff(
+            cumulatives.get("FY", (None, None)),
+            cumulatives.get("9M", (None, None)),
+        )
+
+        for q_id, (rev, gp) in (
+            (f"{year}Q1", q1),
+            (f"{year}Q2", q2),
+            (f"{year}Q3", q3),
+            (f"{year}Q4", q4),
+        ):
+            if rev is None or gp is None or rev <= 0:
+                continue
+            gm = gp / rev
+            out.append(QuarterlyMargin(quarter_id=q_id, gross_margin=gm))
+
+    return tuple(out[-12:])
 
 
 def _build_annual_from_dart(
