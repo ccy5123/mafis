@@ -327,7 +327,62 @@ def evaluate_ticker(
     ticker is excluded from the universe BEFORE axis evaluation —
     we don't even compute proxies, since the conglomerate exclusion
     is a hard gate.
+
+    P3-2 (2026-04) adds a "no fundamentals" gate that fires before
+    the §13 check: when both `industry_classification == "Unknown"`
+    AND `annual == ()`, the ticker has no resolvable company
+    identity (Finnhub /profile2 returned empty AND no historical
+    filings exist). This catches ETFs (SPY, QQQ — Finnhub returns
+    empty profile and the financials-reported endpoint surfaces
+    nothing meaningful) and invalid symbols. Real companies whose
+    annual data is empty (e.g., pre-IPO, or P1b's foreign issuers
+    until EDGAR fallback succeeds) still keep a known industry
+    classification and pass through to the proxy evaluation, where
+    Auto-PASS 1 (insufficient ROIC history) handles them correctly.
     """
+    # No-fundamentals gate (universe self-exclusion). Fires for ETFs
+    # and invalid symbols. Treated as a §13 sister rule because both
+    # are pre-axis universe filters.
+    if (
+        funds.industry_classification in (None, "", "Unknown")
+        and not funds.annual
+    ):
+        sentinel = AxisVerdict(
+            axis="moat",
+            verdict="FAIL",
+            reason=(
+                "excluded: no resolvable fundamentals "
+                "(Unknown industry AND empty annual data — likely an "
+                "ETF or invalid symbol)"
+            ),
+            details={},
+        )
+        return PrefilterResult(
+            symbol=funds.symbol,
+            constitution_version=CONSTITUTION_VERSION,
+            moat=sentinel,
+            new_frontier=AxisVerdict(
+                axis="new_frontier",
+                verdict="FAIL",
+                reason="excluded: no resolvable fundamentals",
+                details={},
+            ),
+            bottleneck=AxisVerdict(
+                axis="bottleneck",
+                verdict="FAIL",
+                reason="excluded: no resolvable fundamentals",
+                details={},
+            ),
+            primary_segment=primary_segment,
+            excluded_reason=(
+                "universe self-exclusion: no fundamentals available "
+                "(likely ETF or invalid symbol)"
+            ),
+            hierarchy_decision="REJECT",
+            passed_axes=tuple(),
+            need_llm_axes=tuple(),
+        )
+
     # Multi-segment 30% gate.
     if primary_segment is None or not primary_segment.primary_segment_exists:
         sentinel = AxisVerdict(

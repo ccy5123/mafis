@@ -65,6 +65,78 @@ def _funds(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# P3-2 (2026-04): no-fundamentals universe self-exclusion
+# ---------------------------------------------------------------------------
+
+
+def test_etf_with_unknown_industry_and_empty_annual_is_rejected() -> None:
+    """ETFs (SPY, QQQ, etc.) cause Finnhub /profile2 to return empty
+    AND /financials-reported to surface no usable rows. The pre-axis
+    'no fundamentals' gate must reject before §13 fires."""
+    funds = TickerFundamentals(
+        symbol="SPY",
+        industry_classification="Unknown",
+        annual=(),
+        quarterly_margins=(),
+        segments_history=(
+            SegmentBreakdown(
+                primary_segment_exists=True,
+                primary_segment_name="default",
+                primary_segment_revenue_share=1.0,
+                all_segments=(Segment(name="default", revenue=None, share_of_total=1.0),),
+                fiscal_year=0,
+                source="single_segment_default",
+            ),
+        ),
+        top5_customer_share=None,
+        diversification_attempt_signals=0,
+        industry_roic_3y_median=None,
+        industry_gross_margin_3y_std=None,
+    )
+    primary = funds.segments_history[-1]
+    result = evaluate_ticker(funds, primary)
+    assert result.hierarchy_decision == "REJECT"
+    assert result.excluded_reason is not None
+    assert "ETF" in result.excluded_reason or "invalid" in result.excluded_reason
+    # All three axes share the same exclusion reason.
+    assert result.moat.verdict == "FAIL"
+    assert result.new_frontier.verdict == "FAIL"
+    assert result.bottleneck.verdict == "FAIL"
+
+
+def test_real_company_with_known_industry_but_empty_annual_passes_gate() -> None:
+    """A real company that just has zero annual rows yet (e.g., pre-IPO
+    or P1b's foreign issuers prior to EDGAR fallback) must NOT trip the
+    no-fundamentals gate — Auto-PASS 1 (insufficient ROIC history)
+    handles them correctly downstream."""
+    funds = TickerFundamentals(
+        symbol="NEWCO",
+        industry_classification="Semiconductors",  # known industry
+        annual=(),
+        quarterly_margins=(),
+        segments_history=(
+            SegmentBreakdown(
+                primary_segment_exists=True,
+                primary_segment_name="default",
+                primary_segment_revenue_share=1.0,
+                all_segments=(Segment(name="default", revenue=None, share_of_total=1.0),),
+                fiscal_year=0,
+                source="single_segment_default",
+            ),
+        ),
+        top5_customer_share=None,
+        diversification_attempt_signals=0,
+        industry_roic_3y_median=None,
+        industry_gross_margin_3y_std=None,
+    )
+    primary = funds.segments_history[-1]
+    result = evaluate_ticker(funds, primary)
+    # Should reach axis evaluation (hierarchy gate decides decisions).
+    # The §13 sister-gate must NOT fire when industry is known.
+    assert result.excluded_reason is None or "ETF" not in (result.excluded_reason or "")
+
+
 def test_no_primary_segment_excludes_outright() -> None:
     """Conglomerate with 4 equal-sized segments → excluded before any
     axis evaluation runs.
