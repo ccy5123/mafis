@@ -107,6 +107,16 @@ def main() -> int:
             "content is current-snapshot, not as-of calibration date."
         ),
     )
+    parser.add_argument(
+        "--with-stage3",
+        action="store_true",
+        help=(
+            "Run Stage 3 LLM screening on every ticker that Stage 2 "
+            "advanced. Records the Stage 3 verdict alongside Stage 2 "
+            "in the ledger. Requires Ollama (or whatever LLM_BACKEND "
+            "points to) to be reachable. Adds ~5-30s per ticker."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.manifest.exists():
@@ -134,7 +144,8 @@ def main() -> int:
             f"Calibration date: {calibration_date.isoformat()}\n"
             f"Horizon: {horizon_years} years\n"
             f"Cache: {'disabled' if args.no_cache else 'enabled'}\n"
-            f"RAG signals: {'enabled (lookahead bias warning)' if args.with_rag else 'disabled'}",
+            f"RAG signals: {'enabled (lookahead bias warning)' if args.with_rag else 'disabled'}\n"
+            f"Stage 3 LLM: {'enabled (~5-30s/ticker)' if args.with_stage3 else 'disabled'}",
             border_style="cyan",
         )
     )
@@ -145,6 +156,7 @@ def main() -> int:
         horizon_years=horizon_years,
         cache=not args.no_cache,
         with_rag_signals=args.with_rag,
+        with_stage3_llm=args.with_stage3,
     )
 
     _print_summary(summary)

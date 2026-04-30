@@ -217,7 +217,7 @@ def _serialize_record(record: TickerBackValidation) -> dict[str, Any]:
     are reachable through the prefilter result's `details` field if
     a future audit needs them — kept here as `prefilter.moat.details`.
     """
-    return {
+    payload: dict[str, Any] = {
         "symbol": record.symbol,
         "calibration_date": record.calibration_date.isoformat(),
         "horizon_date": record.horizon_date.isoformat(),
@@ -228,6 +228,13 @@ def _serialize_record(record: TickerBackValidation) -> dict[str, Any]:
             _serialize_persistence(o) for o in record.axis_persistence
         ],
     }
+    # P3-5 (2026-04): include the Stage 3 LLM result when present.
+    # Absent when calibration ran with --with-stage3=False (legacy
+    # flow) — distinguishable from null-LLM-output by presence of
+    # the key.
+    if record.stage3_result is not None:
+        payload["stage3"] = _serialize_stage3(record.stage3_result)
+    return payload
 
 
 def _serialize_prefilter(p: PrefilterResult) -> dict[str, Any]:
@@ -268,6 +275,33 @@ def _serialize_persistence(o: AxisPersistenceOutcome) -> dict[str, Any]:
         "passed_at_calibration": o.passed_at_calibration,
         "persisted_at_horizon": o.persisted_at_horizon,
         "detail": o.detail,
+    }
+
+
+def _serialize_stage3(s: Any) -> dict[str, Any]:
+    """Serialize a Stage3Result. Inputs come via record.stage3_result
+    so the type is `Stage3Result` at the call site; we type Any here
+    to keep the import lazy (Stage3Result lives in `screening.types`
+    which is already imported by this module, so we just use it).
+    """
+    def _axis(o: Any) -> dict[str, Any]:
+        return {
+            "axis": o.axis,
+            "verdict": o.verdict,
+            "qualifier": o.qualifier,
+            "reasoning": o.reasoning,
+        }
+    return {
+        "constitution_version": s.constitution_version,
+        "hierarchy_decision": s.hierarchy_decision,
+        "rejection_reason": s.rejection_reason,
+        "llm_reported_decision": s.llm_reported_decision,
+        "moat": _axis(s.moat),
+        "new_frontier": _axis(s.new_frontier),
+        "bottleneck": _axis(s.bottleneck),
+        # raw_llm_output omitted intentionally — it can be very long
+        # and we already capture the parsed verdicts. A future audit
+        # tool can re-prompt with the same proxies if needed.
     }
 
 

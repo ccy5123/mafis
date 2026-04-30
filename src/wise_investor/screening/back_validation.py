@@ -63,6 +63,7 @@ from wise_investor.screening.proxies import (
 )
 from wise_investor.screening.types import (
     PrefilterResult,
+    Stage3Result,
     TickerFundamentals,
 )
 
@@ -108,7 +109,14 @@ class AxisPersistenceOutcome:
 
 @dataclass(frozen=True)
 class TickerBackValidation:
-    """Per-ticker back-validation record."""
+    """Per-ticker back-validation record.
+
+    `stage3_result` is None when Stage 3 LLM screening wasn't requested
+    (the legacy and `--with-stage3=False` paths). When populated, it
+    overrides the prefilter's hierarchy decision for downstream
+    aggregation — the LLM is the design-intent arbiter for any axis
+    that Stage 2 left ambiguous (constitution §17, §18).
+    """
 
     symbol: str
     calibration_date: dt.date
@@ -117,6 +125,7 @@ class TickerBackValidation:
     prefilter_result: PrefilterResult
     return_outcome: StockReturnOutcome
     axis_persistence: tuple[AxisPersistenceOutcome, ...]
+    stage3_result: Stage3Result | None = None
 
 
 @dataclass
@@ -300,6 +309,8 @@ def back_validate_ticker(
     source: str = "finnhub",
     with_industry_aggregates: bool = True,
     with_rag_signals: bool = False,
+    with_stage3_llm: bool = False,
+    stage3_llm_call: Callable[[str], str] | None = None,
 ) -> TickerBackValidation:
     """Run the full back-validation flow on one ticker.
 
@@ -337,6 +348,17 @@ def back_validate_ticker(
     reflect events that may not yet have happened at the calibration
     date. Calibration runs that flip this on must record it in the
     ledger entry's `with_rag_signals=True` field for traceability.
+
+    `with_stage3_llm` (P3-5 2026-04): when True (default False), runs
+    `screening.llm_screening.screen_ticker` after Stage 2 finishes,
+    populating the `stage3_result` field on the returned
+    `TickerBackValidation`. Stage 2 hierarchy decision REJECTs are
+    short-circuited — the LLM is invoked only when Stage 2 left
+    something to resolve. Constitution §17/§18: the LLM is the
+    arbiter for ambiguity, not a second-opinion overlay on PASSes.
+    `stage3_llm_call` is an injection point for tests; production
+    runs leave it None and the Stage 3 module's `_default_llm_call`
+    routes through the LLMBackend abstraction.
     """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
@@ -472,6 +494,28 @@ def back_validate_ticker(
         else None
     )
 
+    # Stage 3 LLM screening (P3-5 2026-04). Only fires when explicitly
+    # requested AND Stage 2 didn't reject — the LLM is for ambiguous
+    # cases, not for re-judging clear REJECTs.
+    stage3_result: Stage3Result | None = None
+    if with_stage3_llm and prefilter.hierarchy_decision != "REJECT":
+        try:
+            from wise_investor.screening.llm_screening import screen_ticker
+            stage3_result = screen_ticker(
+                funds_calib, prefilter, llm_call=stage3_llm_call,
+            )
+            logger.info(
+                "Stage 3 for %s: decision=%s",
+                symbol, stage3_result.hierarchy_decision,
+            )
+        except Exception as e:
+            logger.warning(
+                "Stage 3 LLM call failed for %s: %s — proceeding with "
+                "Stage 2 result only",
+                symbol, e,
+            )
+            stage3_result = None
+
     return TickerBackValidation(
         symbol=symbol.upper(),
         calibration_date=calibration_date,
@@ -487,6 +531,7 @@ def back_validate_ticker(
             excess_return=excess,
         ),
         axis_persistence=tuple(persistence),
+        stage3_result=stage3_result,
     )
 
 
@@ -501,11 +546,13 @@ def back_validate_universe(
     cache: bool = True,
     source: str = "finnhub",
     with_rag_signals: bool = False,
+    with_stage3_llm: bool = False,
+    stage3_llm_call: Callable[[str], str] | None = None,
 ) -> BackValidationSummary:
     """Run back_validate_ticker across a list of symbols and aggregate.
 
-    `source` and `with_rag_signals` are forwarded to each ticker (see
-    `back_validate_ticker` for valid values).
+    `source`, `with_rag_signals`, and `with_stage3_llm` are forwarded
+    to each ticker (see `back_validate_ticker` for valid values).
     """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
@@ -529,6 +576,8 @@ def back_validate_universe(
                 cache=cache,
                 source=source,
                 with_rag_signals=with_rag_signals,
+                with_stage3_llm=with_stage3_llm,
+                stage3_llm_call=stage3_llm_call,
             )
             summary.add(record)
         except Exception as e:
