@@ -62,8 +62,53 @@ diagnosis is that qwen2.5:7b-16k can't carry the §17/§18 qualitative
 load consistently. Larger model variants (14B, thinking-class) are
 the natural next sweep before adjusting any threshold.
 
+### `v6_post-P3-6A_qwen2.5-14b_2026-04-30.json`
+
+Same calibration setup as v5 (Constitution v2.0 + all P0/P1/P3-1..5
+infrastructure + --with-rag + --with-stage3) with the Stage 3
+model swapped to qwen2.5:14b (9.0GB, 4-bit quantization, ~30s/ticker
+on the same 15GB RAM machine).
+
+Topline (Stage 3 final decision):
+
+| Metric            | v5 (7B) | v6 (14B)        |
+|-------------------|---------|-----------------|
+| n evaluated       | 30      | 30              |
+| Final advance     | 0       | 0               |
+| Final reject      | 30      | 30              |
+| TP / FP / TN / FN | 0/0/9/21| 0/0/9/21        |
+| Precision         | undef.  | undef. (TP=0)   |
+| Recall            | 0.0%    | 0.0%            |
+| Accuracy          | 30.0%   | 30.0%           |
+| moat rescue       | 0       | 0               |
+| INVALID axis      | 5       | 6 (worse)       |
+| Partial PASSes    | NVDA m. | TSM bottleneck  |
+|                   | TSM b.  | only            |
+|                   | ASML b. |                 |
+
+Key finding: **doubling the parameter count did not move any
+end-to-end calibration metric.** Both 7B and 14B route every
+manifest ticker through Stage 3 to REJECT. 14B actually produced
+*more* INVALID-axis records (6 vs 5) and *fewer* partial PASSes
+(1 vs 3). NVDA's moat=PASS signal that 7B managed to surface
+disappeared at 14B.
+
+Diagnosis: **the bottleneck is the Stage 3 prompt, not the model
+size.** Specifically:
+- The prompt echoes Stage 2's `NEED_LLM` verdict directly into the
+  body, and the LLM (V's case) sometimes copies the word back as
+  its own verdict — the parser then routes the axis to INVALID
+  per Commitment 3, dragging the hierarchy gate to REJECT.
+- The "Be conservative — when uncertain, FAIL" instruction applies
+  uniform downward pressure on both model sizes; capacity doesn't
+  break that pressure on its own.
+
+This baseline is the evidence used to justify the prompt-revision
+sweep (v7 onward). Constitution v2.0 unchanged — only `stage3_prompts`
+language and verdict-allowlist enforcement should be revisited next.
+
 ### Future baselines (placeholder)
 
-- `v6_post-model-sweep_qwen2.5-14b_*.json` — 14B comparison
-- `v7_post-prompt-revision_*.json` — if Stage 3 prompts get
-  improved
+- `v7_post-prompt-revision_qwen2.5-7b-16k_*.json` — first run with
+  the revised Stage 3 prompt (verdict echo blocked + JSON-schema
+  allowlist hardened)
