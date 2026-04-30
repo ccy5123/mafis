@@ -53,6 +53,7 @@ def fetch_historical_fundamentals_finnhub(
     client: FinancialsClient | None = None,
     industry_aggregates: IndustryAggregates | None = None,
     effective_tax_rate: float = DEFAULT_EFFECTIVE_TAX_RATE,
+    rag_signals: Any = None,
 ) -> TickerFundamentals:
     """Pull historical filings from Finnhub, filtered to those public
     on `as_of_date`.
@@ -73,6 +74,15 @@ def fetch_historical_fundamentals_finnhub(
             a default FinnhubClient (lazy import).
         industry_aggregates, effective_tax_rate: Same semantics as the
             live adapter.
+        rag_signals: Optional `RagSignals` from
+            `screening.rag_signals.extract_rag_signals(symbol)`. When
+            supplied, populates top5_customer_share and
+            diversification_attempt_signals on the returned
+            fundamentals. NOTE (lookahead bias caveat): RAG content
+            comes from the *currently indexed* 10-K, not the filing
+            available on `as_of_date`. Calibration runs that consume
+            this enrichment should record `with_rag_signals=True` in
+            the ledger so the bias is traceable.
     """
     if client is None:
         from wise_investor.data.finnhub import FinnhubClient
@@ -134,14 +144,26 @@ def fetch_historical_fundamentals_finnhub(
         roic_median = None
         gm_std = None
 
+    # --- RAG signals (P1a-Full 2026-04) ---
+    # When supplied, override the legacy None/0 defaults. RAG content is
+    # current-snapshot, not point-in-time at as_of_date — see docstring's
+    # lookahead caveat. Caller (back_validation runner) is responsible
+    # for flagging the ledger entry.
+    if rag_signals is not None:
+        top5 = getattr(rag_signals, "top5_customer_share", None)
+        diversif = getattr(rag_signals, "diversification_attempt_signals", 0)
+    else:
+        top5 = None
+        diversif = 0
+
     return TickerFundamentals(
         symbol=sym,
         industry_classification=industry_classification,
         annual=annual_t,
         quarterly_margins=quarterly_t,
         segments_history=segments_history,
-        top5_customer_share=None,
-        diversification_attempt_signals=0,
+        top5_customer_share=top5,
+        diversification_attempt_signals=diversif,
         industry_roic_3y_median=roic_median,
         industry_gross_margin_3y_std=gm_std,
     )

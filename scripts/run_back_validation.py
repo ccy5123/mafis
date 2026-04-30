@@ -96,6 +96,17 @@ def main() -> int:
         action="store_true",
         help="Disable on-disk historical cache (forces fresh yfinance calls).",
     )
+    parser.add_argument(
+        "--with-rag",
+        action="store_true",
+        help=(
+            "Enrich each ticker with RAG-extracted top5_customer_share "
+            "and diversification_attempt_signals from the indexed 10-K "
+            "collection. Requires `python scripts/index_universe.py` to "
+            "have run first. NOTE: introduces lookahead bias since RAG "
+            "content is current-snapshot, not as-of calibration date."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.manifest.exists():
@@ -122,7 +133,8 @@ def main() -> int:
             f"Tickers: {len(symbols)}\n"
             f"Calibration date: {calibration_date.isoformat()}\n"
             f"Horizon: {horizon_years} years\n"
-            f"Cache: {'disabled' if args.no_cache else 'enabled'}",
+            f"Cache: {'disabled' if args.no_cache else 'enabled'}\n"
+            f"RAG signals: {'enabled (lookahead bias warning)' if args.with_rag else 'disabled'}",
             border_style="cyan",
         )
     )
@@ -132,6 +144,7 @@ def main() -> int:
         calibration_date,
         horizon_years=horizon_years,
         cache=not args.no_cache,
+        with_rag_signals=args.with_rag,
     )
 
     _print_summary(summary)

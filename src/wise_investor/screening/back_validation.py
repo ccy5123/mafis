@@ -47,6 +47,7 @@ import datetime as dt
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from wise_investor.screening import CONSTITUTION_VERSION
 from wise_investor.screening.historical_adapter import (
@@ -298,6 +299,7 @@ def back_validate_ticker(
     cache: bool = True,
     source: str = "finnhub",
     with_industry_aggregates: bool = True,
+    with_rag_signals: bool = False,
 ) -> TickerBackValidation:
     """Run the full back-validation flow on one ticker.
 
@@ -322,6 +324,19 @@ def back_validate_ticker(
     historical peer state, not today's. Set False when running tests
     that don't need network calls or when source='yfinance' (which
     has no peer endpoint).
+
+    `with_rag_signals` (P1a-Full 2026-04): when True (default False),
+    runs `extract_rag_signals(symbol)` against the indexed 10-K
+    collection and feeds the result into the historical adapter so
+    `top5_customer_share` and `diversification_attempt_signals` are
+    populated. NOTE — this introduces a known lookahead bias: RAG
+    content comes from the *currently indexed* 10-K, not the filing
+    available on `calibration_date`. The bias is small (top-5
+    customer share is structurally stable across 5 years for most
+    issuers) but not zero — diversification signals especially
+    reflect events that may not yet have happened at the calibration
+    date. Calibration runs that flip this on must record it in the
+    ledger entry's `with_rag_signals=True` field for traceability.
     """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
@@ -335,10 +350,29 @@ def back_validate_ticker(
             symbol, calibration_date,
         )
 
+    rag_signals_obj: Any = None
+    if with_rag_signals and source == "finnhub" and fetcher is None:
+        try:
+            from wise_investor.screening.rag_signals import extract_rag_signals
+            rag_signals_obj = extract_rag_signals(symbol)
+            logger.info(
+                "RAG signals for %s: top5=%s, diversif=%s",
+                symbol,
+                getattr(rag_signals_obj, "top5_customer_share", None),
+                getattr(rag_signals_obj, "diversification_attempt_signals", None),
+            )
+        except Exception as e:
+            logger.warning(
+                "extract_rag_signals failed for %s: %s — proceeding "
+                "without RAG enrichment",
+                symbol, e,
+            )
+
     funds_calib = _fetch_for_source(
         source, symbol, calibration_date,
         fetcher=fetcher, cache=cache,
         industry_aggregates=industry_aggregates,
+        rag_signals=rag_signals_obj,
     )
     primary_seg = (
         funds_calib.segments_history[-1]
@@ -446,11 +480,12 @@ def back_validate_universe(
     price_return_fetcher: PriceReturnFetcher | None = None,
     cache: bool = True,
     source: str = "finnhub",
+    with_rag_signals: bool = False,
 ) -> BackValidationSummary:
     """Run back_validate_ticker across a list of symbols and aggregate.
 
-    `source` is forwarded to each ticker (see `back_validate_ticker`
-    for valid values).
+    `source` and `with_rag_signals` are forwarded to each ticker (see
+    `back_validate_ticker` for valid values).
     """
     horizon_date = dt.date(
         calibration_date.year + horizon_years,
@@ -473,6 +508,7 @@ def back_validate_universe(
                 price_return_fetcher=price_return_fetcher,
                 cache=cache,
                 source=source,
+                with_rag_signals=with_rag_signals,
             )
             summary.add(record)
         except Exception as e:
@@ -488,6 +524,7 @@ def _fetch_for_source(
     fetcher: Callable | None,
     cache: bool,
     industry_aggregates: object | None = None,
+    rag_signals: Any = None,
 ) -> TickerFundamentals:
     """Dispatch to the right historical adapter.
 
@@ -501,7 +538,9 @@ def _fetch_for_source(
             fetch_historical_fundamentals_finnhub,
         )
         return fetch_historical_fundamentals_finnhub(
-            symbol, as_of_date, industry_aggregates=industry_aggregates,
+            symbol, as_of_date,
+            industry_aggregates=industry_aggregates,
+            rag_signals=rag_signals,
         )
     # yfinance path (or any custom fetcher injection): the legacy
     # adapter has no industry_aggregates parameter, so the value is
