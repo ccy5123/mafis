@@ -107,8 +107,59 @@ This baseline is the evidence used to justify the prompt-revision
 sweep (v7 onward). Constitution v2.0 unchanged — only `stage3_prompts`
 language and verdict-allowlist enforcement should be revisited next.
 
+### `v7_post-prompt-revision_qwen2.5-7b-16k_2026-04-30.json`
+
+First Stage 3 LLM run after the prompt revision (commit 03047ec):
+verdict-echo blocked (Stage 2 NEED_LLM/PASS/FAIL paraphrased
+in-body) + JSON-schema verdict allowlist hardened (explicit
+"do not output NEED_LLM, MAYBE, UNCERTAIN, ..."). Same model and
+infrastructure as v5; ONLY the prompt changed.
+
+Topline (Stage 3 final decision):
+
+| Metric            | v5 (7B old) | v6 (14B old) | v7 (7B new prompt) |
+|-------------------|-------------|--------------|---------------------|
+| n evaluated       | 30          | 30           | 30                  |
+| Final advance     | 0           | 0            | **3**               |
+| Final reject      | 30          | 30           | 27                  |
+| TP / FP / TN / FN | 0/0/9/21    | 0/0/9/21     | **3/0/9/18**        |
+| Precision         | undef.      | undef.       | **100%**            |
+| Recall            | 0.0%        | 0.0%         | **14.3%**           |
+| Accuracy          | 30.0%       | 30.0%        | **40.0%**           |
+| moat rescue       | 0           | 0            | **2** (TSM, ASML)   |
+| INVALID axis      | 5           | 6            | **1** (LLY bottl.)  |
+
+Key finding: **doubling the parameter count (v5 → v6) did nothing
+but a minimal prompt revision (v5 → v7) moved every metric.** The
+3 ticker that advanced (TSM/ASML/NVDA) are all real outperformers
+over the 5y horizon (+147.9%, +226.1%, +541.7% excess), validating
+the Commitment 3 "precision over recall" framing — the rubric
+admits very little but everything it admits, it gets right at
+this manifest size.
+
+The 18 false negatives include MSFT (+196.8%), LLY (+432.7%),
+SNPS (+340.7%), CDNS (+372.6%), TSLA (+1008.6%), NVO (+218.6%),
+COST (+113.6%) — Stage 3 wouldn't pass them. This is the honest
+upper bound for what qwen2.5:7b-16k + the current prompt can do
+on this manifest.
+
+Interesting partial-PASS axes that didn't reach the hierarchy
+gate (≥2 PASS + 1 growth):
+  - NFLX/TSLA/GOOG: frontier=PASS only (NFLX is a possible
+    overcall — underperformed -52.6%)
+  - V/MCO/INTC: bottleneck=PASS only
+
+The hierarchy gate's 2-of-3 requirement filters these out, which
+again is design-intent: a single PASS is below evidence threshold.
+
+This is the **first calibration baseline where the Stage 3 LLM
+actually exercises constitutional judgement instead of uniformly
+rejecting**. Subsequent baselines (v8+) measure incremental
+prompt + model + manifest changes against this anchor.
+
 ### Future baselines (placeholder)
 
-- `v7_post-prompt-revision_qwen2.5-7b-16k_*.json` — first run with
-  the revised Stage 3 prompt (verdict echo blocked + JSON-schema
-  allowlist hardened)
+- `v8_post-14b-with-new-prompt_*.json` — does capacity help once
+  the prompt no longer fights the LLM?
+- `v9_post-prompt-fewshot_*.json` — if few-shot examples lift
+  recall further without breaking precision
