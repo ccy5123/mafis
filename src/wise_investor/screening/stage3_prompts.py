@@ -140,6 +140,30 @@ def _format_frontier_proxies(proxies: FrontierProxies) -> str:
     return "\n".join(parts)
 
 
+def _paraphrase_stage2_verdict(verdict: str) -> str:
+    """Map Stage 2's verdict literal to a phrase that won't tempt the
+    Stage 3 LLM to echo it as its own verdict.
+
+    P3-6 (2026-04) calibration v5/v6 found that some LLM responses
+    set `verdict = "NEED_LLM"` — i.e., the LLM copied the same string
+    Stage 2 sends — which the parser then routes to INVALID. The
+    failure was traced to the prompt verbatim including
+    "Stage 2 quant verdict: NEED_LLM ...". This helper paraphrases
+    the verdict label so the LLM sees the *meaning* without seeing
+    a copyable "NEED_LLM" / "PASS" / "FAIL" token next to a
+    `verdict:` colon.
+
+    The Stage 2 *reason* is still surfaced separately — that's the
+    narrative content the Stage 3 LLM actually needs.
+    """
+    mapping = {
+        "PASS": "Stage 2 quant proxies satisfied this axis quantitatively",
+        "FAIL": "Stage 2 quant proxies did not satisfy this axis",
+        "NEED_LLM": "Stage 2 quant proxies were inconclusive for this axis (your call)",
+    }
+    return mapping.get(verdict, "Stage 2 status unknown")
+
+
 def _format_bottleneck_proxies(proxies: BottleneckProxies) -> str:
     # Constitution §15 also defines `hhi`, `top3_market_share_sum`, and
     # `each_top3_member_share` as market-concentration PASS conditions.
@@ -219,6 +243,14 @@ def build_stage3_prompt(
         else "(no primary segment ≥30%)"
     )
 
+    # P3-6 (2026-04): paraphrase Stage 2 verdicts so the LLM doesn't
+    # copy "NEED_LLM" back as its own axis verdict (V failure mode in
+    # v5/v6). The Stage 2 *reason* is still surfaced — it's the
+    # narrative that helps the LLM, not the verdict label.
+    moat_s2 = _paraphrase_stage2_verdict(prefilter.moat.verdict)
+    frontier_s2 = _paraphrase_stage2_verdict(prefilter.new_frontier.verdict)
+    bottleneck_s2 = _paraphrase_stage2_verdict(prefilter.bottleneck.verdict)
+
     return f"""\
 You are evaluating whether {funds.symbol} passes the user's investment rubric.
 
@@ -237,7 +269,7 @@ AXIS 1 — MOAT
 Stage 2 quantitative proxies for {funds.symbol}:
 {moat_p}
 
-Stage 2 quant verdict: {prefilter.moat.verdict} — {prefilter.moat.reason}
+Stage 2 status — {moat_s2}: {prefilter.moat.reason}
 
 =================================================================
 AXIS 2 — NEW FRONTIER
@@ -247,7 +279,7 @@ AXIS 2 — NEW FRONTIER
 Stage 2 quantitative proxies for {funds.symbol}:
 {frontier_p}
 
-Stage 2 quant verdict: {prefilter.new_frontier.verdict} — {prefilter.new_frontier.reason}
+Stage 2 status — {frontier_s2}: {prefilter.new_frontier.reason}
 
 =================================================================
 AXIS 3 — BOTTLENECK
@@ -257,7 +289,7 @@ AXIS 3 — BOTTLENECK
 Stage 2 quantitative proxies for {funds.symbol}:
 {bottleneck_p}
 
-Stage 2 quant verdict: {prefilter.bottleneck.verdict} — {prefilter.bottleneck.reason}
+Stage 2 status — {bottleneck_s2}: {prefilter.bottleneck.reason}
 
 =================================================================
 HIERARCHY GATE (constitution §9)
@@ -279,6 +311,12 @@ OUTPUT FORMAT
 =================================================================
 Return ONLY a JSON object with this exact shape, no prose, no
 markdown fences. Do not invent fields.
+
+CRITICAL — `verdict` must be EXACTLY one of two strings: "PASS"
+or "FAIL". Do NOT output "NEED_LLM", "MAYBE", "UNCERTAIN",
+"INCONCLUSIVE", "TBD", null, or any other token. Stage 2 may have
+flagged an axis as inconclusive but YOUR job at Stage 3 is to make
+the call: PASS or FAIL.
 
 {{
   "moat":         {{"verdict": "PASS" or "FAIL",

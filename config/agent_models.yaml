@@ -46,6 +46,16 @@ agents:
   economist:
   analyst:
   valuer:
+  # P3-6 (2026-04):
+  #   v5: qwen2.5:7b-16k → recall=0%, 5 INVALID-axis
+  #   v6: qwen2.5:14b    → recall=0%, 6 INVALID-axis (no improvement)
+  # 14B did not change end-to-end outcomes. Diagnosis: the prompt is
+  # the bottleneck (Stage 2 verdict echo + uniform conservatism
+  # pressure), not capacity. Reverting to 7B-16k — its faster
+  # turnaround speeds up prompt-revision iteration. Re-evaluate
+  # capacity AFTER prompt fixes if results still warrant it.
+  stage3_screener:
+    model: qwen2.5:7b-16k
   skeptic:
     # Bear-side diversity example: switch to a Qwen3 thinking
     # variant only for Skeptic.

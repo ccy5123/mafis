@@ -197,3 +197,36 @@ def test_prompt_includes_industry_classification() -> None:
 def test_prompt_includes_primary_segment_label() -> None:
     prompt = build_stage3_prompt(_stub_funds(), _stub_prefilter())
     assert "Data Center" in prompt
+
+
+# ---------------------------------------------------------------------------
+# P3-6 (2026-04): prompt revisions — Stage 2 verdict-echo blocked +
+# JSON-schema verdict allowlist hardened
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_paraphrases_stage2_need_llm_verdict() -> None:
+    """`NEED_LLM` must NOT appear next to a `verdict:` token in the
+    prompt body — that's how v5/v6 LLMs copied it back as their own
+    verdict (V failure mode). The paraphrased phrase must surface
+    instead.
+    """
+    prompt = build_stage3_prompt(_stub_funds(), _stub_prefilter())
+    # Paraphrase phrase present
+    assert "inconclusive" in prompt.lower()
+    # The literal "verdict: NEED_LLM" pattern (which v5/v6 LLMs
+    # copied back) must not appear.
+    assert "verdict: NEED_LLM" not in prompt
+    assert "quant verdict: NEED_LLM" not in prompt
+
+
+def test_prompt_explicit_verdict_allowlist_warns_against_invalid_tokens() -> None:
+    """JSON-schema section must explicitly forbid NEED_LLM/MAYBE/etc.
+    so weaker LLMs can't fall back to the Stage 2 vocabulary.
+    """
+    prompt = build_stage3_prompt(_stub_funds(), _stub_prefilter())
+    # The strict admonition is in the OUTPUT FORMAT section.
+    assert "EXACTLY one of two strings" in prompt or "ONLY" in prompt
+    # Negative examples present so the LLM sees what NOT to write.
+    assert "NEED_LLM" in prompt  # mentioned in the negative list
+    assert "MAYBE" in prompt
