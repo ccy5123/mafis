@@ -157,9 +157,48 @@ actually exercises constitutional judgement instead of uniformly
 rejecting**. Subsequent baselines (v8+) measure incremental
 prompt + model + manifest changes against this anchor.
 
+### `v8_post-14b-with-new-prompt_qwen2.5-14b_2026-04-30.json`
+
+Same prompt as v7 (post commit 03047ec). Stage 3 model swapped to
+qwen2.5:14b. The question this run answered: does capacity help
+once the prompt no longer fights the LLM? **Answer: no — capacity
+hurts.**
+
+Topline (Stage 3 final decision):
+
+| Metric            | v7 (7B new) | v8 (14B new) |
+|-------------------|-------------|---------------|
+| Final advance     | 3           | **0**         |
+| TP / FP / TN / FN | 3/0/9/18    | 0/0/9/21      |
+| Precision         | 100%        | undef. (TP=0) |
+| Recall            | 14.3%       | **0.0%**      |
+| Accuracy          | 40.0%       | 30.0%         |
+| INVALID axis      | 1 (LLY)     | **0** ✓       |
+| moat=PASS axes    | 6           | 4             |
+| frontier=PASS     | 3           | **0**         |
+| bottleneck=PASS   | 5           | 1 (ASML only) |
+
+The single capacity bump produced opposing effects:
+
+  + INVALID dropped 1 → 0 (14B's stricter format adherence)
+  - frontier=PASS collapsed 3 → 0 (14B's stricter conceptual
+    threshold for what counts as a "new frontier")
+  - bottleneck=PASS dropped 5 → 1 (similarly stricter)
+
+7B's slight generosity is what let NVDA/TSM/ASML clear the
+hierarchy gate (≥2 PASS + ≥1 growth axis). 14B turned cautious
+*about the qualitative judgments themselves*, not just the
+formatting.
+
+This is a net negative. 7B-16k is the stable Stage 3 model
+going forward; 14B remains a useful comparison point but isn't
+the deployment target. The next axis to push is the prompt
+itself — concrete few-shot examples that let the model see what
+"PASS-grade evidence" looks like for each axis.
+
 ### Future baselines (placeholder)
 
-- `v8_post-14b-with-new-prompt_*.json` — does capacity help once
-  the prompt no longer fights the LLM?
-- `v9_post-prompt-fewshot_*.json` — if few-shot examples lift
-  recall further without breaking precision
+- `v9_post-prompt-fewshot_*.json` — if 7B + few-shot examples
+  raise recall further without sacrificing precision (ideally
+  picking up MSFT/LLY/SNPS/CDNS — the high-conviction outperformers
+  v7 missed)

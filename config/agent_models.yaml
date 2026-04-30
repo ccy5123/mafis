@@ -46,14 +46,18 @@ agents:
   economist:
   analyst:
   valuer:
-  # P3-6 (2026-04):
-  #   v5: qwen2.5:7b-16k → recall=0%, 5 INVALID-axis
-  #   v6: qwen2.5:14b    → recall=0%, 6 INVALID-axis (no improvement)
-  # 14B did not change end-to-end outcomes. Diagnosis: the prompt is
-  # the bottleneck (Stage 2 verdict echo + uniform conservatism
-  # pressure), not capacity. Reverting to 7B-16k — its faster
-  # turnaround speeds up prompt-revision iteration. Re-evaluate
-  # capacity AFTER prompt fixes if results still warrant it.
+  # P3-6/P3-7 (2026-04):
+  #   v5: qwen2.5:7b-16k + old prompt → recall=0%, 5 INVALID
+  #   v6: qwen2.5:14b   + old prompt → recall=0%, 6 INVALID
+  #   v7: qwen2.5:7b-16k + new prompt → recall=14.3%, 1 INVALID
+  #   v8: qwen2.5:14b   + new prompt → recall=0%,  0 INVALID
+  # 14B improves format adherence (INVALID 1→0) but tightens
+  # qualitative thresholds (frontier=PASS count went 3→0). 7B's
+  # slight generosity is what allows TSM/ASML/NVDA to clear the
+  # hierarchy gate. 14B + new prompt is strictly worse on recall.
+  # Reverting to 7B-16k as the stable Stage 3 model. v9 (next)
+  # will measure whether few-shot examples help recall further
+  # without breaking precision.
   stage3_screener:
     model: qwen2.5:7b-16k
   skeptic:

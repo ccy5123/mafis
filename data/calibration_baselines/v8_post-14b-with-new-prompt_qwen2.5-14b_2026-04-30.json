@@ -1,0 +1,3083 @@
+{
+  "schema_version": 1,
+  "constitution_version": "2.0",
+  "calibration_date": "2018-06-30",
+  "horizon_date": "2023-06-30",
+  "run_timestamp_utc": "2026-04-30T09:17:09.475532+00:00",
+  "n_tickers": 30,
+  "n_advanced": 29,
+  "n_rejected": 1,
+  "advanced_avg_excess_return": 1.22223627807145,
+  "rejected_avg_excess_return": 0.14208747637441244,
+  "moat_persistence_rate": null,
+  "bottleneck_persistence_rate": null,
+  "per_ticker_records": [
+    {
+      "symbol": "KO",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.041 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.0807418708442723,
+            "roic_advantage": -0.04063800735461731,
+            "roic_advantage_trend": -0.0056080261651169664,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "top-5 customer share 0.10 < 0.40 (path 1-B threshold not met); Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio via Risk Factors) before concluding \u2014 the \u00a712 path-A and path-B are alternatives, not joint requirements",
+          "details": {
+            "top5_customer_share": 0.1,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "KO",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.609826399595023,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.02231634626650081
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "KO's ROIC advantage over industry median is negative (-0.041), failing Condition 1 of the moat axis."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear evidence that KO has changed the industry paradigm and imitated by other companies, nor sufficient history to validate."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "KO's top-5 customer revenue share is only 10%, well below the threshold for downstream dependency (40% or greater)."
+        }
+      }
+    },
+    {
+      "symbol": "MSFT",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage eroding at -0.0238/yr (threshold -0.0050)",
+          "details": {
+            "roic_3y_avg": 0.08160736074219509,
+            "roic_advantage": 0.09829281774569285,
+            "roic_advantage_trend": -0.02379179983935977,
+            "gross_margin_3y_std": 0.01819528135744279,
+            "gross_margin_industry_ratio": 0.8441533527362595,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "MSFT",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 2.6001980612407993,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 1.9680553153792755
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "While Microsoft's ROIC has exceeded industry median for over three years, the erosion rate of -0.0238/yr is too rapid to meet the criteria for no active erosion threat."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient data and external verification to confirm that Microsoft has opened a new frontier in its industry, as required by the definition. The imitation evidence condition is not met."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Lack of clear quantitative or qualitative evidence demonstrating Microsoft occupies an irreplaceable position for at least three years with downstream dependency."
+        }
+      }
+    },
+    {
+      "symbol": "V",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "Quant proxies consistent with moat candidacy; Stage 3 must verify structural reason (4-buckets) + erosion threat",
+          "details": {
+            "roic_3y_avg": 0.1555795584425145,
+            "roic_advantage": 0.07695005291812362,
+            "roic_advantage_trend": 0.007352571612229786,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "V",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.8531621988397253,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.22101945297820147
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient historical data to verify structural reasons for ROIC advantage and no clear erosion threat over at least three years."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No external verifiable imitation evidence from other companies or analyst recognition of a paradigm shift introduced by V."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Lack of disclosed downstream dependency and inability to verify replacement difficulty due to insufficient information."
+        }
+      }
+    },
+    {
+      "symbol": "MCO",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage eroding at -0.0246/yr (threshold -0.0050)",
+          "details": {
+            "roic_3y_avg": 0.22994029161697072,
+            "roic_advantage": 0.19276426310005657,
+            "roic_advantage_trend": -0.024593687505084498,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "MCO",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 1.1289792927342566,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.4968365468727327
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC advantage is eroding at -0.0246/yr, which exceeds the threshold of -0.0050/yr for rapid erosion."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient segment history to date the paradigm introduction and no clear imitation evidence from other companies in the industry."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration is undisclosed, and there's insufficient information to prove downstream dependency or replacement difficulty."
+        }
+      }
+    },
+    {
+      "symbol": "TSM",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "TSM",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 2.1107062754712462,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 1.4785635296097224
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC data spans less than 3 years, insufficient history to validate persistence."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm introduction and no imitation evidence observed."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed and replacement difficulty not proven; insufficient data to validate position duration."
+        }
+      }
+    },
+    {
+      "symbol": "ASML",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "ASML",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 2.893286675713562,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 2.2611439298520377
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 1 axis(es) passed (need 2+)",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient ROIC history to evaluate persistence and structural reasons."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear imitation evidence from other industry players or analyst recognition of paradigm shift."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "PASS",
+          "qualifier": "technical",
+          "reasoning": "ASML's unique position in EUV technology makes it irreplaceable for advanced semiconductor production, with no direct competitors within a 1-2 year timeframe."
+        }
+      }
+    },
+    {
+      "symbol": "CDNS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "Quant proxies consistent with moat candidacy; Stage 3 must verify structural reason (4-buckets) + erosion threat",
+          "details": {
+            "roic_3y_avg": 0.13215585702777521,
+            "roic_advantage": 0.05453648416894036,
+            "roic_advantage_trend": 0.02428940871502478,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "CDNS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 4.358007809453041,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 3.7258650635915176
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "While CDNS shows ROIC exceeding industry median over 3 years with no rapid erosion, identifying a clear structural reason from the four buckets is challenging. The advantage may be due to management excellence or temporary market conditions."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No external evidence of CDNS imitating an industry standard change by other companies in its segment, nor analyst recognition of paradigm shift more than 3 years ago."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient information on customer concentration and critical supplier relationships to prove downstream dependency or replacement difficulty within technical, resource, or regulatory reasons."
+        }
+      }
+    },
+    {
+      "symbol": "SNPS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.041 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.05732134439088384,
+            "roic_advantage": -0.040596056935902035,
+            "roic_advantage_trend": 0.0003353629765213653,
+            "gross_margin_3y_std": 0.006562071795999782,
+            "gross_margin_industry_ratio": 0.15349176323536198,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "SNPS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 4.039467545977918,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 3.4073248001163945
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "SNPS's ROIC advantage over industry median is -0.041, which is below the required threshold of 5 percentage points for at least three years."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "There is no clear evidence that SNPS has changed an industry paradigm and had it imitated by other companies in the same industry."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "SNPS's customer concentration and dependency are not clearly disclosed or quantified to meet the required conditions for a bottleneck position."
+        }
+      }
+    },
+    {
+      "symbol": "NVDA",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "Quant proxies consistent with moat candidacy; Stage 3 must verify structural reason (4-buckets) + erosion threat",
+          "details": {
+            "roic_3y_avg": 0.20887880092265818,
+            "roic_advantage": 0.10786505748004885,
+            "roic_advantage_trend": 0.06718549584466928,
+            "gross_margin_3y_std": 0.025212062883317184,
+            "gross_margin_industry_ratio": 0.08382935085901765,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "NVDA",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 6.049518002172326,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 5.417375256310803
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 1 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "PASS",
+          "qualifier": "switching",
+          "reasoning": "NVDA's ROIC consistently exceeds industry median over multiple years due to switching costs associated with its proprietary software and hardware ecosystems."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "While NVDA has introduced innovative GPU technology, there is insufficient external verification of imitation by other companies in the semiconductor industry over a three-year period."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient information to confirm downstream dependency and replacement difficulty for NVDA; customer concentration and materiality are undisclosed."
+        }
+      }
+    },
+    {
+      "symbol": "AMZN",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.048 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.03883128024158812,
+            "roic_advantage": -0.048461444828474975,
+            "roic_advantage_trend": -0.0039976308805209455,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "AMZN",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.5213154087516378,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.11082733710988601
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "AMZN's ROIC is below industry median and shows a negative trend over the past three years."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient data to confirm that AMZN has opened a new frontier with imitation by other companies in the retail industry."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Lack of clear evidence showing downstream dependency and non-replaceability within technical, resource, or regulatory reasons."
+        }
+      }
+    },
+    {
+      "symbol": "NFLX",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.020 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.03148857907197726,
+            "roic_advantage": -0.019672275296981005,
+            "roic_advantage_trend": -0.021400704881792548,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "NFLX",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.10625844865659784,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.525884297204926
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "NFLX's ROIC does not exceed industry median by at least 5 percentage points for 3+ years and is decreasing."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear imitation evidence from other companies in the media/streaming industry over a period of at least 3 years."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "NFLX does not have any technical, resource or regulatory bottleneck that cannot be replaced by others within 1-2 years."
+        }
+      }
+    },
+    {
+      "symbol": "TSLA",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.085 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": -0.05348223121940343,
+            "roic_advantage": -0.08505128658953219,
+            "roic_advantage_trend": 0.06159790860804104,
+            "gross_margin_3y_std": 0.038656582436185284,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "TSLA",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 10.71859596662951,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 10.086453220767986
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "TSLA's ROIC is below industry median and shows no structural advantage that meets Morningstar's four buckets criteria. Additionally, there are clear signs of erosion due to increased competition in the EV market."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "There is insufficient evidence to prove TSLA has changed the automotive industry such that competitors have adopted its business model. Analyst recognition and imitation by other companies are not clearly established beyond claims from TSLA itself."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "TSLA's Supercharger network while once a key differentiator has faced erosion with competitors adopting alternative charging standards. Also, the lack of clear data on downstream dependency and replacement difficulty hinders validation of bottleneck status."
+        }
+      }
+    },
+    {
+      "symbol": "T",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.039 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.0465406690891775,
+            "roic_advantage": -0.038753673433692466,
+            "roic_advantage_trend": 0.0009195974480346602,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "T",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": -0.0173963226573981,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.649539068518922
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "T's ROIC does not exceed the industry median by at least 5 percentage points for 3+ years and shows no clear structural advantage."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear imitation evidence from other companies in the same industry or external analyst recognition that T has changed the industry paradigm."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient information to prove downstream dependency and replacement difficulty for T. Customer concentration and materiality are undisclosed."
+        }
+      }
+    },
+    {
+      "symbol": "F",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "F",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.7045389571622487,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.07239621130072482
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient ROIC history to validate quantitative persistence and structural moat."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear imitation evidence or analyst recognition of a paradigm shift initiated by F more than three years ago."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient data on customer concentration and dependency to validate downstream material reliance."
+        }
+      }
+    },
+    {
+      "symbol": "INTC",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage -0.029 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.1128941218469867,
+            "roic_advantage": -0.028581668013406183,
+            "roic_advantage_trend": -0.015418846851388205,
+            "gross_margin_3y_std": 0.011953024473988898,
+            "gross_margin_industry_ratio": 0.04012558233319706,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "INTC",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": -0.2320284233048573,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.8641711691663811
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "INTC's ROIC has not exceeded the industry median by at least 5 percentage points for 3+ years and is currently showing signs of erosion."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear imitation evidence from other companies in the semiconductor industry, and insufficient time since any potential paradigm shift."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration is undisclosed, and there's no strong evidence that INTC cannot be replaced by competitors within 1-2 years."
+        }
+      }
+    },
+    {
+      "symbol": "GE",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "GE",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.40751624084673277,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.2246265050147911
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "GE's ROIC data spans less than 3 years, insufficient history to determine structural moat."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm shift and no imitation evidence from other industry players."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed; unable to verify downstream dependency or replacement difficulty."
+        }
+      }
+    },
+    {
+      "symbol": "BRK-B",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "BRK-B",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.815471419239592,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.18332867337806813
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient ROIC history to validate persistence and structural advantage."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No clear industry paradigm shift imitated by other companies, nor analyst recognition of such a change."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient data on downstream dependency and non-replaceability within the required timeframe."
+        }
+      }
+    },
+    {
+      "symbol": "GOOG",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "Quant proxies consistent with moat candidacy; Stage 3 must verify structural reason (4-buckets) + erosion threat",
+          "details": {
+            "roic_3y_avg": 0.11624631173504331,
+            "roic_advantage": 0.09443951721876295,
+            "roic_advantage_trend": -0.0030623100563692183,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "GOOG",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 1.145885527865382,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.513742782003858
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 1 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "PASS",
+          "qualifier": "intangible",
+          "reasoning": "GOOG's ROIC advantage over industry median is consistent, and its brand strength and user lock-in due to integrated services suggest a sustainable moat."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "GOOG has not been imitated by other companies in the same industry for at least three years; no external analysts have confirmed that GOOG's approach is an industry standard."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient data to prove downstream dependency and replacement difficulty. Customer concentration and risk factors disclosures are not clear enough to meet the bottleneck criteria."
+        }
+      }
+    },
+    {
+      "symbol": "COST",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "ROIC advantage 0.008 < 0.05 (5pp persistence threshold)",
+          "details": {
+            "roic_3y_avg": 0.09982994758679069,
+            "roic_advantage": 0.008133616236442362,
+            "roic_advantage_trend": 0.0028930990308817833,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "COST",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 1.7679534261765761,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 1.1358106803150523
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC advantage over industry median is less than 5 percentage points and does not meet the quantitative persistence threshold."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No evidence of external imitation or analyst recognition that COST has changed the retail industry paradigm, and no segment history available to date the potential paradigm introduction."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration is undisclosed; insufficient information to prove downstream dependency and replacement difficulty. Also, stage duration less than 3 years with no clear erosion signal."
+        }
+      }
+    },
+    {
+      "symbol": "HD",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "Quant proxies consistent with moat candidacy; Stage 3 must verify structural reason (4-buckets) + erosion threat",
+          "details": {
+            "roic_3y_avg": 0.2587754495521655,
+            "roic_advantage": 0.16922344399714354,
+            "roic_advantage_trend": 0.023818353625731654,
+            "gross_margin_3y_std": 0.002645074367366561,
+            "gross_margin_industry_ratio": 0.01375654541738329,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "1 diversification attempt signal(s) detected \u2014 Stage 3 must judge whether this represents auto-PASS 4 erosion",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 1
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "HD",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.8073336891702794,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.1751909433087555
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient history to validate ROIC persistence and structural reason. No clear pattern over three years."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No evidence of paradigm shift imitation by competitors or analyst recognition after at least 3 years."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Detected diversification attempt signals suggest erosion threat to potential bottleneck position."
+        }
+      }
+    },
+    {
+      "symbol": "LLY",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "LLY",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 4.959573523361865,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 4.327430777500341
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "LLY's ROIC data spans less than 3 years, which is insufficient history to determine sustained quantitative persistence."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm introduction and no imitation evidence or analyst recognition found for a new frontier."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed and insufficient data to verify downstream dependency and replacement difficulty."
+        }
+      }
+    },
+    {
+      "symbol": "NVO",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "NVO",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 2.818012092622912,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 2.185869346761388
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 1 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "PASS",
+          "qualifier": null,
+          "reasoning": "Auto-PASS condition 1 applies as ROIC data spans less than 3 years."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm shift and no clear imitation evidence exists. Stage 2 flagged this axis as inconclusive due to insufficient information, leading to a FAIL decision."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration is undisclosed and there's no clear proof of downstream dependency or replacement difficulty. Stage 2 flagged this axis as inconclusive, leading to a FAIL decision."
+        }
+      }
+    },
+    {
+      "symbol": "005930.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "ROIC computed but industry median unavailable for comparison",
+          "details": {
+            "roic_3y_avg": 0.15360773963868307,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": 0.4618578705754754,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "005930.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.8309511346729279,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.19880838881140406
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC data spans less than 3 years, insufficient history to validate persistent advantage."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm change and no imitation evidence found."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed; cannot prove downstream dependency or replacement difficulty."
+        }
+      }
+    },
+    {
+      "symbol": "000660.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "ROIC computed but industry median unavailable for comparison",
+          "details": {
+            "roic_3y_avg": 0.20914079441416902,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": 0.42604508663781193,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "000660.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.4873436605449226,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.14479908531660124
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC data spans less than 3 years, insufficient history to validate quantitative persistence."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm shift and no imitation evidence or analyst recognition found."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed; unable to prove downstream dependency and replacement difficulty without further information."
+        }
+      }
+    },
+    {
+      "symbol": "035420.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "ROIC computed but industry median unavailable for comparison",
+          "details": {
+            "roic_3y_avg": 0.2987536013265066,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "035420.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.234580511462811,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.39756223439871285
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC data spans less than 3 years and industry median ROIC unavailable for comparison."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm change; no imitation evidence or analyst recognition can be verified."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed and replacement difficulty not proven. Downstream dependency and position duration cannot be confirmed."
+        }
+      }
+    },
+    {
+      "symbol": "035720.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "ROIC computed but industry median unavailable for comparison",
+          "details": {
+            "roic_3y_avg": 0.028560105675717377,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "035720.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 1.2108873384156418,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.5787445925541179
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC data spans less than 3 years and industry median ROIC is unavailable for comparison."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No segment history available to date the paradigm introduction; imitation evidence or analyst recognition not observed."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration and downstream dependency are undisclosed; unable to prove non-replaceability within 1-2 years."
+        }
+      }
+    },
+    {
+      "symbol": "207940.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "207940.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.813986849140744,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.18184410327922018
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 1 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "PASS",
+          "qualifier": null,
+          "reasoning": "Auto-PASS 1: ROIC data spans less than 3 years (insufficient history)."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient segment history available to date the paradigm introduction and verify imitation evidence."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)."
+        }
+      }
+    },
+    {
+      "symbol": "373220.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "auto-PASS 1: ROIC data spans <3 years (insufficient history)",
+          "details": {
+            "roic_3y_avg": null,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": null,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "373220.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.09504950495049513,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": -0.5370932409110287
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "No quantitative ROIC data available for at least 3 years."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient segment history to date the paradigm introduction and no external imitation evidence observed."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration undisclosed and replacement difficulty not proven."
+        }
+      }
+    },
+    {
+      "symbol": "005380.KS",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "ADVANCE_TO_STAGE_3",
+        "passed_axes": [],
+        "need_llm_axes": [
+          "moat",
+          "new_frontier",
+          "bottleneck"
+        ],
+        "excluded_reason": null,
+        "moat": {
+          "axis": "moat",
+          "verdict": "NEED_LLM",
+          "reason": "ROIC computed but industry median unavailable for comparison",
+          "details": {
+            "roic_3y_avg": 0.05038236750767145,
+            "roic_advantage": null,
+            "roic_advantage_trend": null,
+            "gross_margin_3y_std": 0.11587448162858638,
+            "gross_margin_industry_ratio": null,
+            "customer_concentration_trend": null
+          }
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "NEED_LLM",
+          "reason": "No segment history available to date the paradigm",
+          "details": {
+            "years_since_first_segment_introduction": null,
+            "new_segments_added_5y": null
+          }
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "NEED_LLM",
+          "reason": "Customer concentration undisclosed; Stage 3 must check \u00a712 condition 1-A (5\u00d7 downstream revenue ratio) and Risk Factors materiality, then verify replacement difficulty (\u00a712 cond. 2) and position duration (\u00a712 cond. 3)",
+          "details": {
+            "top5_customer_share": null,
+            "diversification_attempt_signals": 0
+          }
+        }
+      },
+      "return_outcome": {
+        "symbol": "005380.KS",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.9380104791497288,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.30586773328820493
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "Could not compute ROIC advantage at T+horizon"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "top-5 customer share unavailable at T+horizon (yfinance doesn't surface; needs EDGAR Risk Factors parser)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": true,
+          "persisted_at_horizon": null,
+          "detail": "imitation-evidence verification requires news / analyst feeds; deferred until those adapters land"
+        }
+      ],
+      "stage3": {
+        "constitution_version": "2.0",
+        "hierarchy_decision": "REJECT",
+        "rejection_reason": "only 0 axis(es) passed (need 2+); no growth axis (new_frontier or bottleneck) passed",
+        "llm_reported_decision": "REJECT",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "ROIC data is insufficient for comparison with industry median due to lack of available industry ROIC data."
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Insufficient historical segment data to determine if a paradigm shift has occurred and been imitated by other companies in the same industry."
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "qualifier": null,
+          "reasoning": "Customer concentration is undisclosed; unable to assess downstream dependency and replacement difficulty based on available information."
+        }
+      }
+    },
+    {
+      "symbol": "SPY",
+      "calibration_date": "2018-06-30",
+      "horizon_date": "2023-06-30",
+      "constitution_version": "2.0",
+      "prefilter": {
+        "hierarchy_decision": "REJECT",
+        "passed_axes": [],
+        "need_llm_axes": [],
+        "excluded_reason": "universe self-exclusion: no fundamentals available (likely ETF or invalid symbol)",
+        "moat": {
+          "axis": "moat",
+          "verdict": "FAIL",
+          "reason": "excluded: no resolvable fundamentals (Unknown industry AND empty annual data \u2014 likely an ETF or invalid symbol)",
+          "details": {}
+        },
+        "new_frontier": {
+          "axis": "new_frontier",
+          "verdict": "FAIL",
+          "reason": "excluded: no resolvable fundamentals",
+          "details": {}
+        },
+        "bottleneck": {
+          "axis": "bottleneck",
+          "verdict": "FAIL",
+          "reason": "excluded: no resolvable fundamentals",
+          "details": {}
+        }
+      },
+      "return_outcome": {
+        "symbol": "SPY",
+        "start_date": "2018-06-30",
+        "end_date": "2023-06-30",
+        "ticker_return": 0.7742302222359363,
+        "benchmark_return": 0.6321427458615239,
+        "excess_return": 0.14208747637441244
+      },
+      "axis_persistence": [
+        {
+          "axis": "moat",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass moat at calibration (FAIL)"
+        },
+        {
+          "axis": "bottleneck",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass bottleneck at calibration (FAIL)"
+        },
+        {
+          "axis": "new_frontier",
+          "passed_at_calibration": false,
+          "persisted_at_horizon": null,
+          "detail": "did not pass new_frontier at calibration (FAIL)"
+        }
+      ]
+    }
+  ],
+  "manifest": {
+    "selection_principle": "Tickers selected for axis-diversity coverage per Constitution v2.0 \u00a722.\nSelection criteria are objective: industry coverage, expected axis pass\ndistribution, segment-reporting structure (single vs multi-segment for\n\u00a713). NO ticker is included because of user preference, recent\nperformance, or analyst opinion. Negative controls and conglomerate\nedge cases are intentionally included so the rubric is exercised in\nboth directions.",
+    "default_calibration_date": "2018-06-30",
+    "default_horizon_years": 5,
+    "entries": [
+      {
+        "symbol": "KO",
+        "rationale": "Beverages \u2014 long-cited brand-moat exemplar; ROIC advantage detection",
+        "market": "US"
+      },
+      {
+        "symbol": "MSFT",
+        "rationale": "Software platforms \u2014 switching-cost moat; stable ROIC",
+        "market": "US"
+      },
+      {
+        "symbol": "V",
+        "rationale": "Payment networks \u2014 two-sided network moat",
+        "market": "US"
+      },
+      {
+        "symbol": "MCO",
+        "rationale": "Credit ratings \u2014 regulatory + reputation moat",
+        "market": "US"
+      },
+      {
+        "symbol": "TSM",
+        "rationale": "Leading-edge fab process \u2014 technical bottleneck pure-play (NOTE: Finnhub financials-reported coverage gap, see manifest header)",
+        "market": "US-ADR"
+      },
+      {
+        "symbol": "ASML",
+        "rationale": "EUV lithography monopoly \u2014 technical bottleneck (NOTE: same coverage gap as TSM)",
+        "market": "US-ADR"
+      },
+      {
+        "symbol": "CDNS",
+        "rationale": "EDA tools duopoly \u2014 technical bottleneck",
+        "market": "US"
+      },
+      {
+        "symbol": "SNPS",
+        "rationale": "EDA tools duopoly \u2014 technical bottleneck pair w/ CDNS",
+        "market": "US"
+      },
+      {
+        "symbol": "NVDA",
+        "rationale": "AI accelerators \u2014 frontier expansion from gaming",
+        "market": "US"
+      },
+      {
+        "symbol": "AMZN",
+        "rationale": "AWS \u2014 frontier expansion from retail",
+        "market": "US"
+      },
+      {
+        "symbol": "NFLX",
+        "rationale": "Streaming pivot from DVD \u2014 historical frontier (2018 selection date catches arc)",
+        "market": "US"
+      },
+      {
+        "symbol": "TSLA",
+        "rationale": "EV mainstream entry \u2014 historical frontier; selection-date sensitive",
+        "market": "US"
+      },
+      {
+        "symbol": "T",
+        "rationale": "Telecom \u2014 capital-intensive, eroding moat; negative control",
+        "market": "US"
+      },
+      {
+        "symbol": "F",
+        "rationale": "Auto OEM \u2014 historically thin ROIC; negative control",
+        "market": "US"
+      },
+      {
+        "symbol": "INTC",
+        "rationale": "Process leadership lost mid-2010s; negative control on bottleneck axis",
+        "market": "US"
+      },
+      {
+        "symbol": "GE",
+        "rationale": "Conglomerate restructuring \u2014 \u00a713 multi-segment edge case",
+        "market": "US"
+      },
+      {
+        "symbol": "BRK-B",
+        "rationale": "Holding company \u2014 \u00a713 30% rule should likely exclude",
+        "market": "US"
+      },
+      {
+        "symbol": "GOOG",
+        "rationale": "Search dominant + Other Bets \u2014 \u00a713 should isolate Search segment (financials auto-aliased to GOOGL)",
+        "market": "US"
+      },
+      {
+        "symbol": "COST",
+        "rationale": "Membership retail \u2014 low GM but stable; persistence test",
+        "market": "US"
+      },
+      {
+        "symbol": "HD",
+        "rationale": "Big-box retail \u2014 domestic moat test",
+        "market": "US"
+      },
+      {
+        "symbol": "LLY",
+        "rationale": "Pharma \u2014 patent moat with finite life; trend test",
+        "market": "US"
+      },
+      {
+        "symbol": "NVO",
+        "rationale": "Pharma \u2014 Ozempic franchise; new-frontier expansion",
+        "market": "US-ADR"
+      },
+      {
+        "symbol": "005930.KS",
+        "rationale": "Samsung Electronics \u2014 memory bottleneck + foundry frontier",
+        "market": "KR"
+      },
+      {
+        "symbol": "000660.KS",
+        "rationale": "SK Hynix \u2014 memory bottleneck pure-play",
+        "market": "KR"
+      },
+      {
+        "symbol": "035420.KS",
+        "rationale": "NAVER \u2014 domestic platform moat",
+        "market": "KR"
+      },
+      {
+        "symbol": "035720.KS",
+        "rationale": "Kakao \u2014 domestic platform with diversification attempts",
+        "market": "KR"
+      },
+      {
+        "symbol": "207940.KS",
+        "rationale": "Samsung Biologics \u2014 biosimilar bottleneck",
+        "market": "KR"
+      },
+      {
+        "symbol": "373220.KS",
+        "rationale": "LG Energy Solution \u2014 battery cells; frontier candidate",
+        "market": "KR"
+      },
+      {
+        "symbol": "005380.KS",
+        "rationale": "Hyundai Motor \u2014 auto OEM Korean cyclical control",
+        "market": "KR"
+      },
+      {
+        "symbol": "SPY",
+        "rationale": "S&P 500 ETF \u2014 universe should self-exclude; sanity test on \u00a713",
+        "market": "US"
+      }
+    ]
+  }
+}
