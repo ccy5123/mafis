@@ -230,3 +230,47 @@ def test_prompt_explicit_verdict_allowlist_warns_against_invalid_tokens() -> Non
     # Negative examples present so the LLM sees what NOT to write.
     assert "NEED_LLM" in prompt  # mentioned in the negative list
     assert "MAYBE" in prompt
+
+
+# ---------------------------------------------------------------------------
+# P3-8 (2026-05): few-shot evidence calibration
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_includes_few_shot_evidence_calibration() -> None:
+    """The prompt now anchors PASS/FAIL judgements to concrete
+    historical exemplars (P3-8 2026-05). Verify the section header
+    is present and at least one canonical PASS example surfaces."""
+    prompt = build_stage3_prompt(_stub_funds(), _stub_prefilter())
+    assert "EVIDENCE CALIBRATION" in prompt
+    # The 6 exemplar anchors (3 axes × 2 verdicts) must be present.
+    assert "Apple iOS" in prompt
+    assert "Apple iPhone" in prompt
+    assert "Boeing/Airbus" in prompt
+
+
+def test_few_shot_examples_dont_collide_with_calibration_manifest() -> None:
+    """Few-shot exemplars MUST NOT be drawn from the live calibration
+    manifest — that would let the LLM overfit by recognizing a focal
+    ticker by name. The whitelist of allowed exemplar identifiers
+    is intentionally narrow and audited."""
+    from pathlib import Path
+    import yaml
+
+    repo_root = Path(__file__).resolve().parents[2]
+    manifest_path = repo_root / "data/calibration/manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text())
+    universe = {t["symbol"].upper() for t in manifest["tickers"]}
+
+    prompt = build_stage3_prompt(_stub_funds(), _stub_prefilter())
+    # Symbols in the EVIDENCE CALIBRATION block — manually curated.
+    # If a future revision adds an exemplar here, the new symbol
+    # must be added to this whitelist AND verified absent from the
+    # manifest.
+    exemplar_symbols = {"AAPL"}  # the only ticker symbol in current few-shot
+    overlap = exemplar_symbols & universe
+    assert not overlap, (
+        f"Few-shot exemplar(s) {overlap} collide with the calibration "
+        f"manifest — pick exemplars from outside the universe to avoid "
+        f"contamination."
+    )

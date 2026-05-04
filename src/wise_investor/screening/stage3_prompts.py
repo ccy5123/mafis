@@ -140,6 +140,85 @@ def _format_frontier_proxies(proxies: FrontierProxies) -> str:
     return "\n".join(parts)
 
 
+def _evidence_examples() -> str:
+    """Concrete PASS/FAIL exemplars per axis (P3-8 2026-05).
+
+    Manifest contamination policy — these examples must NOT appear in
+    `data/calibration/manifest.yaml`, otherwise the LLM could overfit
+    by recognizing a manifest ticker by name. All companies referenced
+    here are well-known historical cases drawn from outside the
+    current manifest universe (AAPL, AutoZone, Boeing, Yum Brands,
+    De Beers, Snowflake).
+
+    Why this exists: calibration v5..v8 left ~18 false-negative
+    outperformers on the table because the LLM was uncertain what
+    "PASS-grade evidence" looked like for each axis. Adding 1
+    PASS + 1 FAIL exemplar per axis lets the model anchor to a
+    concrete reference point before judging the focal ticker.
+    """
+    return """\
+=================================================================
+EVIDENCE CALIBRATION — what PASS-grade vs FAIL-grade looks like
+=================================================================
+Examples below are NOT from the focal universe. Use them only as
+calibration anchors for what evidence at PASS strength looks like
+on each axis. The focal ticker may differ in details — judge it on
+its own facts.
+
+MOAT — PASS exemplar (Apple iOS, ~2018):
+  - Switching cost: years of purchased apps, iMessage social
+    locking, AirDrop friend graph, iCloud photo library.
+  - ROIC consistently above sub-industry median by 10pp+ for 5+
+    years; trend stable.
+  - Bucket: switching-cost + intangible (brand). Multiple
+    structural levers, not one.
+
+MOAT — FAIL exemplar (a typical specialty auto-parts retailer):
+  - ROIC roughly equals industry median. No measurable advantage.
+  - "Switching cost" is just brand loyalty in a commodity category;
+    parts are interchangeable across vendors.
+  - Per §10: no 5pp advantage AND no qualitative case for
+    intangible / switching / network / cost-leader buckets.
+
+NEW FRONTIER — PASS exemplar (Apple iPhone, 2007 launch):
+  - Paradigm-defining: multi-touch + capacitive screen + App Store
+    redefined what a phone is. Not a feature add — a new product
+    category.
+  - First-mover lead-time: 2-3 years before Android offered
+    comparable polish; App Store ecosystem locked developer
+    mindshare during that window.
+  - Per §11: clears the 3-year minimum and shows imitation lag.
+
+NEW FRONTIER — FAIL exemplar (a fast-food chain adding plant-based items):
+  - Menu refresh, not a category. The chain operates in the same
+    market as before with the same competitors.
+  - No imitation-lag evidence; Burger King would launch its own
+    in 6 months.
+  - Per §11: incremental expansion, not frontier.
+
+BOTTLENECK — PASS exemplar (Boeing/Airbus duopoly in commercial aviation):
+  - Top customers (airlines) cannot replace OEM at scale — the
+    only alternative is the other duopolist, and switching is
+    multi-year and capital-heavy.
+  - Type: regulatory + technical (certification + IP).
+  - Constitution §12 path 1-A satisfied: 5x downstream-revenue
+    dependency holds (airlines tied to airframe and parts).
+
+BOTTLENECK — FAIL exemplar (a typical mid-tier B2B SaaS vendor):
+  - Customers can switch to a competitor within months; many
+    feature-parity alternatives.
+  - No top-5 customer concentration above 40% AND no §12 path-1-A
+    structural dependency.
+  - Per §12: doesn't satisfy any path.
+
+When evaluating the focal ticker, compare its evidence to these
+exemplars. PASS if the focal's evidence is at least as strong on
+that axis. FAIL otherwise — including when the evidence is merely
+suggestive without being structural (Commitment 3).
+
+"""
+
+
 def _paraphrase_stage2_verdict(verdict: str) -> str:
     """Map Stage 2's verdict literal to a phrase that won't tempt the
     Stage 3 LLM to echo it as its own verdict.
@@ -306,7 +385,7 @@ The user's caller will recompute this gate from your per-axis verdicts;
 your `hierarchy_decision` field is informational. Be honest about each
 axis even if the gate result feels disappointing.
 
-=================================================================
+{_evidence_examples()}=================================================================
 OUTPUT FORMAT
 =================================================================
 Return ONLY a JSON object with this exact shape, no prose, no
